@@ -1,0 +1,436 @@
+{
+  "libraries": [
+    {
+      "name": "AndroidX Core",
+      "groupId": "androidx.core",
+      "artifactId": "core-ktx",
+      "packagePrefix": "androidx.core",
+      "classSignatures": ["androidx.core.app.ActivityCompat", "androidx.core.content.ContextCompat"],
+      "latestVersion": "1.12.0"
+    },
+    {
+      "name": "AndroidX AppCompat",
+      "groupId": "androidx.appcompat",
+      "artifactId": "appcompat",
+      "packagePrefix": "androidx.appcompat",
+      "classSignatures": ["androidx.appcompat.app.AppCompatActivity", "androidx.appcompat.widget.Toolbar"],
+      "latestVersion": "1.6.1"
+    },
+    {
+      "name": "Material Components",
+      "groupId": "com.google.android.material",
+      "artifactId": "material",
+      "packagePrefix": "com.google.android.material",
+      "classSignatures": ["com.google.android.material.button.MaterialButton"],
+      "latestVersion": "1.11.0"
+    },
+    {
+      "name": "AndroidX ConstraintLayout",
+      "groupId": "androidx.constraintlayout",
+      "artifactId": "constraintlayout",
+      "packagePrefix": "androidx.constraintlayout",
+      "classSignatures": ["androidx.constraintlayout.widget.ConstraintLayout"],
+      "latestVersion": "2.1.4"
+    },
+    {
+      "name": "AndroidX RecyclerView",
+      "groupId": "androidx.recyclerview",
+      "artifactId": "recyclerview",
+      "packagePrefix": "androidx.recyclerview",
+      "classSignatures": ["androidx.recyclerview.widget.RecyclerView"],
+      "latestVersion": "1.3.2"
+    },
+    {
+      "name": "AndroidX Fragment",
+      "groupId": "androidx.fragment",
+      "artifactId": "fragment-ktx",
+      "packagePrefix": "androidx.fragment",
+      "classSignatures": ["androidx.fragment.app.Fragment", "androidx.fragment.app.FragmentActivity"],
+      "latestVersion": "1.6.2"
+    },
+    {
+      "name": "AndroidX Lifecycle",
+      "groupId": "androidx.lifecycle",
+      "artifactId": "lifecycle-runtime-ktx",
+      "packagePrefix": "androidx.lifecycle",
+      "classSignatures": ["androidx.lifecycle.ViewModel", "androidx.lifecycle.LiveData"],
+      "latestVersion": "2.7.0"
+    },
+    {
+      "name": "AndroidX Navigation",
+      "groupId": "androidx.navigation",
+      "artifactId": "navigation-fragment-ktx",
+      "packagePrefix": "androidx.navigation",
+      "classSignatures": ["androidx.navigation.NavController", "androidx.navigation.fragment.NavHostFragment"],
+      "latestVersion": "2.7.6"
+    },
+    {
+      "name": "AndroidX Room",
+      "groupId": "androidx.room",
+      "artifactId": "room-runtime",
+      "packagePrefix": "androidx.room",
+      "classSignatures": ["androidx.room.Room", "androidx.room.RoomDatabase"],
+      "latestVersion": "2.6.1"
+    },
+    {
+      "name": "AndroidX DataStore",
+      "groupId": "androidx.datastore",
+      "artifactId": "datastore-preferences",
+      "packagePrefix": "androidx.datastore",
+      "classSignatures": ["androidx.datastore.preferences.core.Preferences"],
+      "latestVersion": "1.0.0"
+    },
+    {
+      "name": "AndroidX Work",
+      "groupId": "androidx.work",
+      "artifactId": "work-runtime-ktx",
+      "packagePrefix": "androidx.work",
+      "classSignatures": ["androidx.work.Worker", "androidx.work.WorkManager"],
+      "latestVersion": "2.9.0"
+    },
+    {
+      "name": "AndroidX Camera",
+      "groupId": "androidx.camera",
+      "artifactId": "camera-core",
+      "packagePrefix": "androidx.camera",
+      "classSignatures": ["androidx.camera.core.CameraX"],
+      "latestVersion": "1.3.1"
+    },
+    {
+      "name": "AndroidX Biometric",
+      "groupId": "androidx.biometric",
+      "artifactId": "biometric",
+      "packagePrefix": "androidx.biometric",
+      "classSignatures": ["androidx.biometric.BiometricPrompt"],
+      "latestVersion": "1.1.0"
+    },
+    {
+      "name": "AndroidX Security",
+      "groupId": "androidx.security",
+      "artifactId": "security-crypto",
+      "packagePrefix": "androidx.security",
+      "classSignatures": ["androidx.security.crypto.EncryptedSharedPreferences"],
+      "latestVersion": "1.1.0-alpha06"
+    },
+    {
+      "name": "AndroidX ViewPager2",
+      "groupId": "androidx.viewpager2",
+      "artifactId": "viewpager2",
+      "packagePrefix": "androidx.viewpager2",
+      "classSignatures": ["androidx.viewpager2.widget.ViewPager2"],
+      "latestVersion": "1.0.0"
+    },
+    {
+      "name": "AndroidX SwipeRefreshLayout",
+      "groupId": "androidx.swiperefreshlayout",
+      "artifactId": "swiperefreshlayout",
+      "packagePrefix": "androidx.swiperefreshlayout",
+      "classSignatures": ["androidx.swiperefreshlayout.widget.SwipeRefreshLayout"],
+      "latestVersion": "1.1.0"
+    },
+    {
+      "name": "Retrofit",
+      "groupId": "com.squareup.retrofit2",
+      "artifactId": "retrofit",
+      "packagePrefix": "retrofit2",
+      "classSignatures": ["retrofit2.Retrofit", "retrofit2.Call", "retrofit2.Callback"],
+      "latestVersion": "2.9.0"
+    },
+    {
+      "name": "OkHttp",
+      "groupId": "com.squareup.okhttp3",
+      "artifactId": "okhttp",
+      "packagePrefix": "okhttp3",
+      "classSignatures": ["okhttp3.OkHttpClient", "okhttp3.Request", "okhttp3.Response"],
+      "latestVersion": "4.12.0"
+    },
+    {
+      "name": "OkHttp Logging Interceptor",
+      "groupId": "com.squareup.okhttp3",
+      "artifactId": "logging-interceptor",
+      "packagePrefix": "okhttp3.logging",
+      "classSignatures": ["okhttp3.logging.HttpLoggingInterceptor"],
+      "latestVersion": "4.12.0"
+    },
+    {
+      "name": "Gson",
+      "groupId": "com.google.code.gson",
+      "artifactId": "gson",
+      "packagePrefix": "com.google.gson",
+      "classSignatures": ["com.google.gson.Gson", "com.google.gson.GsonBuilder"],
+      "latestVersion": "2.10.1"
+    },
+    {
+      "name": "Moshi",
+      "groupId": "com.squareup.moshi",
+      "artifactId": "moshi",
+      "packagePrefix": "com.squareup.moshi",
+      "classSignatures": ["com.squareup.moshi.Moshi", "com.squareup.moshi.JsonAdapter"],
+      "latestVersion": "1.15.0"
+    },
+    {
+      "name": "Glide",
+      "groupId": "com.github.bumptech.glide",
+      "artifactId": "glide",
+      "packagePrefix": "com.bumptech.glide",
+      "classSignatures": ["com.bumptech.glide.Glide", "com.bumptech.glide.RequestManager"],
+      "latestVersion": "4.16.0"
+    },
+    {
+      "name": "Coil",
+      "groupId": "io.coil-kt",
+      "artifactId": "coil",
+      "packagePrefix": "coil",
+      "classSignatures": ["coil.ImageLoader", "coil.request.ImageRequest"],
+      "latestVersion": "2.5.0"
+    },
+    {
+      "name": "Picasso",
+      "groupId": "com.squareup.picasso",
+      "artifactId": "picasso",
+      "packagePrefix": "com.squareup.picasso",
+      "classSignatures": ["com.squareup.picasso.Picasso"],
+      "latestVersion": "2.8"
+    },
+    {
+      "name": "RxJava",
+      "groupId": "io.reactivex.rxjava3",
+      "artifactId": "rxjava",
+      "packagePrefix": "io.reactivex.rxjava3",
+      "classSignatures": ["io.reactivex.rxjava3.core.Observable", "io.reactivex.rxjava3.core.Single"],
+      "latestVersion": "3.1.8"
+    },
+    {
+      "name": "RxJava2",
+      "groupId": "io.reactivex.rxjava2",
+      "artifactId": "rxjava",
+      "packagePrefix": "io.reactivex",
+      "classSignatures": ["io.reactivex.Observable", "io.reactivex.Single"],
+      "latestVersion": "2.2.21"
+    },
+    {
+      "name": "RxAndroid",
+      "groupId": "io.reactivex.rxjava3",
+      "artifactId": "rxandroid",
+      "packagePrefix": "io.reactivex.rxjava3.android",
+      "classSignatures": ["io.reactivex.rxjava3.android.schedulers.AndroidSchedulers"],
+      "latestVersion": "3.0.2"
+    },
+    {
+      "name": "Kotlin Coroutines Core",
+      "groupId": "org.jetbrains.kotlinx",
+      "artifactId": "kotlinx-coroutines-core",
+      "packagePrefix": "kotlinx.coroutines",
+      "classSignatures": ["kotlinx.coroutines.CoroutineScope", "kotlinx.coroutines.Dispatchers"],
+      "latestVersion": "1.7.3"
+    },
+    {
+      "name": "Kotlin Coroutines Android",
+      "groupId": "org.jetbrains.kotlinx",
+      "artifactId": "kotlinx-coroutines-android",
+      "packagePrefix": "kotlinx.coroutines.android",
+      "classSignatures": ["kotlinx.coroutines.android.asCoroutineDispatcher"],
+      "latestVersion": "1.7.3"
+    },
+    {
+      "name": "Dagger",
+      "groupId": "com.google.dagger",
+      "artifactId": "dagger",
+      "packagePrefix": "dagger",
+      "classSignatures": ["dagger.Component", "dagger.Module", "dagger.Provides"],
+      "latestVersion": "2.50"
+    },
+    {
+      "name": "Hilt",
+      "groupId": "com.google.dagger",
+      "artifactId": "hilt-android",
+      "packagePrefix": "dagger.hilt",
+      "classSignatures": ["dagger.hilt.android.AndroidEntryPoint", "dagger.hilt.InstallIn"],
+      "latestVersion": "2.50"
+    },
+    {
+      "name": "Koin",
+      "groupId": "io.insert-koin",
+      "artifactId": "koin-android",
+      "packagePrefix": "org.koin",
+      "classSignatures": ["org.koin.core.module.Module", "org.koin.android.ext.koin.androidContext"],
+      "latestVersion": "3.5.3"
+    },
+    {
+      "name": "Firebase Core",
+      "groupId": "com.google.firebase",
+      "artifactId": "firebase-common",
+      "packagePrefix": "com.google.firebase",
+      "classSignatures": ["com.google.firebase.FirebaseApp"],
+      "latestVersion": "20.4.2"
+    },
+    {
+      "name": "Firebase Analytics",
+      "groupId": "com.google.firebase",
+      "artifactId": "firebase-analytics",
+      "packagePrefix": "com.google.firebase.analytics",
+      "classSignatures": ["com.google.firebase.analytics.FirebaseAnalytics"],
+      "latestVersion": "21.5.0"
+    },
+    {
+      "name": "Firebase Crashlytics",
+      "groupId": "com.google.firebase",
+      "artifactId": "firebase-crashlytics",
+      "packagePrefix": "com.google.firebase.crashlytics",
+      "classSignatures": ["com.google.firebase.crashlytics.FirebaseCrashlytics"],
+      "latestVersion": "18.6.0"
+    },
+    {
+      "name": "Firebase Messaging",
+      "groupId": "com.google.firebase",
+      "artifactId": "firebase-messaging",
+      "packagePrefix": "com.google.firebase.messaging",
+      "classSignatures": ["com.google.firebase.messaging.FirebaseMessaging"],
+      "latestVersion": "23.4.0"
+    },
+    {
+      "name": "Firebase Auth",
+      "groupId": "com.google.firebase",
+      "artifactId": "firebase-auth",
+      "packagePrefix": "com.google.firebase.auth",
+      "classSignatures": ["com.google.firebase.auth.FirebaseAuth"],
+      "latestVersion": "22.3.0"
+    },
+    {
+      "name": "Google Play Services Base",
+      "groupId": "com.google.android.gms",
+      "artifactId": "play-services-base",
+      "packagePrefix": "com.google.android.gms",
+      "classSignatures": ["com.google.android.gms.common.GoogleApiAvailability"],
+      "latestVersion": "18.3.0"
+    },
+    {
+      "name": "Google Play Services Auth",
+      "groupId": "com.google.android.gms",
+      "artifactId": "play-services-auth",
+      "packagePrefix": "com.google.android.gms.auth",
+      "classSignatures": ["com.google.android.gms.auth.api.signin.GoogleSignIn"],
+      "latestVersion": "20.7.0"
+    },
+    {
+      "name": "Google Play Services Location",
+      "groupId": "com.google.android.gms",
+      "artifactId": "play-services-location",
+      "packagePrefix": "com.google.android.gms.location",
+      "classSignatures": ["com.google.android.gms.location.FusedLocationProviderClient"],
+      "latestVersion": "21.1.0"
+    },
+    {
+      "name": "Google Play Services Maps",
+      "groupId": "com.google.android.gms",
+      "artifactId": "play-services-maps",
+      "packagePrefix": "com.google.android.gms.maps",
+      "classSignatures": ["com.google.android.gms.maps.GoogleMap", "com.google.android.gms.maps.MapView"],
+      "latestVersion": "18.2.0"
+    },
+    {
+      "name": "Timber",
+      "groupId": "com.jakewharton.timber",
+      "artifactId": "timber",
+      "packagePrefix": "timber.log",
+      "classSignatures": ["timber.log.Timber"],
+      "latestVersion": "5.0.1"
+    },
+    {
+      "name": "LeakCanary",
+      "groupId": "com.squareup.leakcanary",
+      "artifactId": "leakcanary-android",
+      "packagePrefix": "leakcanary",
+      "classSignatures": ["leakcanary.LeakCanary"],
+      "latestVersion": "2.13"
+    },
+    {
+      "name": "EventBus",
+      "groupId": "org.greenrobot",
+      "artifactId": "eventbus",
+      "packagePrefix": "org.greenrobot.eventbus",
+      "classSignatures": ["org.greenrobot.eventbus.EventBus"],
+      "latestVersion": "3.3.1"
+    },
+    {
+      "name": "Lottie",
+      "groupId": "com.airbnb.android",
+      "artifactId": "lottie",
+      "packagePrefix": "com.airbnb.lottie",
+      "classSignatures": ["com.airbnb.lottie.LottieAnimationView"],
+      "latestVersion": "6.3.0"
+    },
+    {
+      "name": "ExoPlayer",
+      "groupId": "com.google.android.exoplayer",
+      "artifactId": "exoplayer",
+      "packagePrefix": "com.google.android.exoplayer2",
+      "classSignatures": ["com.google.android.exoplayer2.ExoPlayer"],
+      "latestVersion": "2.19.1"
+    },
+    {
+      "name": "Media3",
+      "groupId": "androidx.media3",
+      "artifactId": "media3-exoplayer",
+      "packagePrefix": "androidx.media3",
+      "classSignatures": ["androidx.media3.exoplayer.ExoPlayer"],
+      "latestVersion": "1.2.1"
+    },
+    {
+      "name": "ZXing",
+      "groupId": "com.google.zxing",
+      "artifactId": "core",
+      "packagePrefix": "com.google.zxing",
+      "classSignatures": ["com.google.zxing.BarcodeFormat", "com.google.zxing.MultiFormatReader"],
+      "latestVersion": "3.5.2"
+    },
+    {
+      "name": "Apache Commons Lang",
+      "groupId": "org.apache.commons",
+      "artifactId": "commons-lang3",
+      "packagePrefix": "org.apache.commons.lang3",
+      "classSignatures": ["org.apache.commons.lang3.StringUtils"],
+      "latestVersion": "3.14.0"
+    },
+    {
+      "name": "Kotlin Serialization JSON",
+      "groupId": "org.jetbrains.kotlinx",
+      "artifactId": "kotlinx-serialization-json",
+      "packagePrefix": "kotlinx.serialization",
+      "classSignatures": ["kotlinx.serialization.json.Json"],
+      "latestVersion": "1.6.2"
+    },
+    {
+      "name": "Compose UI",
+      "groupId": "androidx.compose.ui",
+      "artifactId": "ui",
+      "packagePrefix": "androidx.compose.ui",
+      "classSignatures": ["androidx.compose.ui.Modifier"],
+      "latestVersion": "1.5.4"
+    },
+    {
+      "name": "Compose Material3",
+      "groupId": "androidx.compose.material3",
+      "artifactId": "material3",
+      "packagePrefix": "androidx.compose.material3",
+      "classSignatures": ["androidx.compose.material3.MaterialTheme"],
+      "latestVersion": "1.1.2"
+    },
+    {
+      "name": "Accompanist",
+      "groupId": "com.google.accompanist",
+      "artifactId": "accompanist-systemuicontroller",
+      "packagePrefix": "com.google.accompanist",
+      "classSignatures": ["com.google.accompanist.systemuicontroller.SystemUiController"],
+      "latestVersion": "0.32.0"
+    },
+    {
+      "name": "Paging",
+      "groupId": "androidx.paging",
+      "artifactId": "paging-runtime",
+      "packagePrefix": "androidx.paging",
+      "classSignatures": ["androidx.paging.PagingSource", "androidx.paging.PagingData"],
+      "latestVersion": "3.2.1"
+    }
+  ]
+}

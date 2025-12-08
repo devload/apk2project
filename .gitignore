@@ -1,0 +1,29 @@
+# Decompiled/Reversed projects (DO NOT COMMIT)
+hanacard_project/
+playstore_project/
+*_project/
+decompiled_output/
+
+# Test outputs
+test_output/
+test_apks/
+
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local configuration
+local.properties
