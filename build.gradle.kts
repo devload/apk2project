@@ -41,6 +41,12 @@ dependencies {
     // Logging
     implementation("org.slf4j:slf4j-simple:2.0.9")
 
+    // AST Parsing for Deobfuscation
+    implementation("com.github.javaparser:javaparser-symbol-solver-core:3.25.8")
+
+    // Graph Processing for Call Graph
+    implementation("org.jgrapht:jgrapht-core:1.5.2")
+
     // Testing
     testImplementation(kotlin("test"))
     testImplementation("io.kotest:kotest-runner-junit5:5.8.0")

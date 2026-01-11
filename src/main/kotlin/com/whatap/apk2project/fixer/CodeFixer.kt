@@ -2,6 +2,9 @@ package com.whatap.apk2project.fixer
 
 import com.whatap.apk2project.utils.Logger
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.*
 
 /**
  * Post-processor for decompiled Java code to fix common compilation errors.
@@ -9,7 +12,10 @@ import java.io.File
 class CodeFixer {
 
     private var fixedFiles = 0
-    private var totalFixes = 0
+    private val totalFixesCounter = AtomicInteger(0)
+    private var totalFixes: Int
+        get() = totalFixesCounter.get()
+        set(value) { totalFixesCounter.set(value) }
 
     data class FixResult(
         val fixedFiles: Int,
@@ -20,30 +26,72 @@ class CodeFixer {
     data class MethodSignature(val name: String, val argCount: Int)
 
     /**
-     * Fix all Java files in the source directory
+     * Fix all Java files in the source directory (병렬 처리)
      */
-    fun fixSourceDirectory(sourceDir: File): FixResult {
+    fun fixSourceDirectory(
+        sourceDir: File,
+        progressMonitor: com.whatap.apk2project.deobfuscator.monitor.ProgressMonitor? = null
+    ): FixResult {
         fixedFiles = 0
-        totalFixes = 0
-        val missingMethods = mutableSetOf<MethodSignature>()
+        totalFixesCounter.set(0)
+        val missingMethods = ConcurrentHashMap.newKeySet<MethodSignature>()
+        val fixedFilesCount = AtomicInteger(0)
+        val processedCount = AtomicInteger(0)
 
         Logger.info("Scanning for compilation errors...")
 
-        // First pass: find all missing methods
-        sourceDir.walkTopDown()
+        // 모든 Java 파일 리스트 수집
+        val javaFiles = sourceDir.walkTopDown()
             .filter { it.extension == "java" }
-            .forEach { file ->
-                missingMethods.addAll(findMissingMethods(file))
+            .toList()
+
+        Logger.info("Found ${javaFiles.size} Java files")
+
+        // ProgressMonitor 초기화
+        progressMonitor?.let {
+            it.parsedFiles = 0
+            it.totalFilesToParse = javaFiles.size
+        }
+
+        runBlocking {
+            // First pass: find all missing methods (병렬)
+            val chunkSize = 500
+            progressMonitor?.status = "Pass 1: Scanning for missing methods..."
+            javaFiles.chunked(chunkSize).forEach { chunk ->
+                val jobs = chunk.map { file ->
+                    async(Dispatchers.IO) {
+                        try {
+                            missingMethods.addAll(findMissingMethods(file))
+                        } finally {
+                            val current = processedCount.incrementAndGet()
+                            progressMonitor?.parsedFiles = current
+                        }
+                    }
+                }
+                jobs.awaitAll()
             }
 
-        // Second pass: fix code and collect all fixes
-        sourceDir.walkTopDown()
-            .filter { it.extension == "java" }
-            .forEach { file ->
-                if (fixJavaFile(file)) {
-                    fixedFiles++
+            // Second pass: fix code and collect all fixes (병렬)
+            processedCount.set(0)
+            progressMonitor?.status = "Pass 2: Fixing compilation errors..."
+            javaFiles.chunked(chunkSize).forEach { chunk ->
+                val jobs = chunk.map { file ->
+                    async(Dispatchers.IO) {
+                        try {
+                            if (fixJavaFile(file)) {
+                                fixedFilesCount.incrementAndGet()
+                            }
+                        } finally {
+                            val current = processedCount.incrementAndGet()
+                            progressMonitor?.parsedFiles = current
+                        }
+                    }
                 }
+                jobs.awaitAll()
             }
+        }
+
+        fixedFiles = fixedFilesCount.get()
 
         // Generate stub class for missing obfuscated methods
         val stubsGenerated = if (missingMethods.isNotEmpty()) {
@@ -160,7 +208,7 @@ class CodeFixer {
 
         if (content != originalContent) {
             file.writeText(content)
-            totalFixes += fileFixCount
+            totalFixesCounter.addAndGet(fileFixCount)
             return true
         }
 
