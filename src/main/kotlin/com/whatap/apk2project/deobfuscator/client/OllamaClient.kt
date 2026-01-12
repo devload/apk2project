@@ -21,10 +21,48 @@ class OllamaClient(
     private val baseUrl: String = "http://localhost:11434",
     private val modelName: String = "deepseek-coder:6.7b",
     private val timeout: Long = 1_200_000,  // 20분 (CPU 모드 고려)
-    private val monitor: ProgressMonitor? = null
+    private val monitor: ProgressMonitor? = null,
+    private val maxRetries: Int = 3,  // 최대 재시도 횟수
+    private val retryDelayMs: Long = 1000  // 재시도 간 대기 시간
 ) : AiClient {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val gson = Gson()
+
+    /**
+     * 제네릭 재시도 함수
+     *
+     * @param targetName 분석 대상 이름 (메서드/클래스/패키지)
+     * @param requestType 요청 타입 ("analysis", "class_analysis", "package_analysis")
+     * @param block 실행할 블록 (prompt를 받아 response를 반환)
+     * @return 성공 시 결과, 실패 시 null
+     */
+    private fun <T> executeWithRetry(
+        targetName: String,
+        requestType: String,
+        block: (String) -> T?
+    ): T? {
+        repeat(maxRetries) { attempt ->
+            try {
+                val result = block("")
+
+                // 성공하면 결과 반환
+                if (result != null) {
+                    return result
+                }
+            } catch (e: Exception) {
+                logger.error("Attempt ${attempt + 1}: Exception during $requestType for $targetName: ${e.message}")
+            }
+
+            // 재시도 전 대기
+            if (attempt < maxRetries - 1) {
+                Thread.sleep(retryDelayMs)
+            }
+        }
+
+        // 모든 재시도 실패
+        logger.error("Failed to $requestType $targetName after $maxRetries attempts")
+        return null
+    }
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
@@ -37,62 +75,37 @@ class OllamaClient(
      */
     override fun analyzeMethod(method: MethodNode, sourceCode: String): MethodAnalysisResult? {
         val prompt = buildCompactPrompt(method, sourceCode)
-        var lastResponse = ""
-        var lastDuration = 0L
 
-        repeat(3) { attempt ->
+        return executeWithRetry(
+            targetName = method.methodName,
+            requestType = "analysis"
+        ) { _ ->
             val startTime = System.currentTimeMillis()
             val response = callOllama(prompt)
             val duration = System.currentTimeMillis() - startTime
 
-            lastResponse = response
-            lastDuration = duration
-
             val result = parseMethodAnalysis(response, method)
 
-            // 성공 조건:
-            // 1. result가 null이 아님
-            // 2. suggestedName이 원본과 다름 (실제로 이름이 바뀜)
-            // 3. suggestedName이 의미있는 이름 (너무 짧거나 generic하지 않음)
-            if (result != null) {
-                if (result.suggestedName != method.methodName) {
-                    // 성공: LLM 요청 기록
-                    monitor?.addLlmRequest(
-                        methodName = method.methodName,
-                        requestType = "analysis",
-                        model = modelName,
-                        promptPreview = prompt.take(200),
-                        response = response.take(500),
-                        durationMs = duration,
-                        success = true
-                    )
-                    return result
-                } else {
-                    logger.warn("Attempt ${attempt + 1}: Method name unchanged (${method.methodName}), retrying...")
-                }
+            // 성공 조건: result가 null이 아니고 suggestedName이 원본과 다름
+            if (result != null && result.suggestedName != method.methodName) {
+                monitor?.addLlmRequest(
+                    methodName = method.methodName,
+                    requestType = "analysis",
+                    model = modelName,
+                    promptPreview = prompt.take(200),
+                    response = response.take(500),
+                    durationMs = duration,
+                    success = true
+                )
+                result
             } else {
-                logger.warn("Attempt ${attempt + 1}: Parse failed for ${method.methodName}, retrying...")
-            }
-
-            // 재시도 전 짧은 대기
-            if (attempt < 2) {
-                Thread.sleep(1000)
+                when {
+                    result == null -> logger.warn("Attempt failed: Parse failed for ${method.methodName}, retrying...")
+                    result.suggestedName == method.methodName -> logger.warn("Attempt failed: Method name unchanged (${method.methodName}), retrying...")
+                }
+                null
             }
         }
-
-        // 모든 재시도 실패
-        logger.error("Failed to analyze ${method.methodName} after 3 attempts")
-        monitor?.addLlmRequest(
-            methodName = method.methodName,
-            requestType = "analysis",
-            model = modelName,
-            promptPreview = prompt.take(200),
-            response = lastResponse.take(500),
-            durationMs = lastDuration,
-            success = false
-        )
-
-        return null
     }
 
     /**
@@ -112,16 +125,14 @@ class OllamaClient(
      */
     override fun analyzeClass(className: String, methodNames: List<String>): ClassAnalysisResult? {
         val prompt = buildClassAnalysisPrompt(className, methodNames)
-        var lastResponse = ""
-        var lastDuration = 0L
 
-        repeat(3) { attempt ->
+        return executeWithRetry(
+            targetName = className,
+            requestType = "class_analysis"
+        ) { _ ->
             val startTime = System.currentTimeMillis()
             val response = callOllama(prompt)
             val duration = System.currentTimeMillis() - startTime
-
-            lastResponse = response
-            lastDuration = duration
 
             val result = parseClassAnalysis(response, className)
 
@@ -136,30 +147,12 @@ class OllamaClient(
                     durationMs = duration,
                     success = true
                 )
-                return result
+                result
             } else {
-                logger.warn("Attempt ${attempt + 1}: Class name unchanged or parse failed ($className), retrying...")
-            }
-
-            // 재시도 전 짧은 대기
-            if (attempt < 2) {
-                Thread.sleep(1000)
+                logger.warn("Attempt failed: Class name unchanged or parse failed ($className), retrying...")
+                null
             }
         }
-
-        // 모든 재시도 실패
-        logger.error("Failed to analyze class $className after 3 attempts")
-        monitor?.addLlmRequest(
-            methodName = className,
-            requestType = "class_analysis",
-            model = modelName,
-            promptPreview = prompt.take(200),
-            response = lastResponse.take(500),
-            durationMs = lastDuration,
-            success = false
-        )
-
-        return null
     }
 
     /**
@@ -171,16 +164,14 @@ class OllamaClient(
         description: String
     ): PackageAnalysisResult? {
         val prompt = buildPackageAnalysisPrompt(packageName, classNames, description)
-        var lastResponse = ""
-        var lastDuration = 0L
 
-        repeat(3) { attempt ->
+        return executeWithRetry(
+            targetName = packageName,
+            requestType = "package_analysis"
+        ) { _ ->
             val startTime = System.currentTimeMillis()
             val response = callOllama(prompt)
             val duration = System.currentTimeMillis() - startTime
-
-            lastResponse = response
-            lastDuration = duration
 
             val result = parsePackageAnalysis(response, packageName)
 
@@ -195,35 +186,18 @@ class OllamaClient(
                     durationMs = duration,
                     success = true
                 )
-                return result
+                result
             } else {
-                logger.warn("Attempt ${attempt + 1}: Package name unchanged or parse failed ($packageName), retrying...")
-            }
-
-            // 재시도 전 짧은 대기
-            if (attempt < 2) {
-                Thread.sleep(1000)
+                logger.warn("Attempt failed: Package name unchanged or parse failed ($packageName), retrying...")
+                null
             }
         }
-
-        // 모든 재시도 실패
-        logger.error("Failed to analyze package $packageName after 3 attempts")
-        monitor?.addLlmRequest(
-            methodName = packageName,
-            requestType = "package_analysis",
-            model = modelName,
-            promptPreview = prompt.take(200),
-            response = lastResponse.take(500),
-            durationMs = lastDuration,
-            success = false
-        )
-
-        return null
     }
 
     /**
      * 최적화된 프롬프트 (영어) - 로컬 변수 포함
      */
+    @Suppress("UNUSED_PARAMETER")
     private fun buildCompactPrompt(method: MethodNode, sourceCode: String): String {
         return """Analyze this obfuscated Java method. Suggest meaningful names for the method and local variables.
 
