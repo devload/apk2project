@@ -52,6 +52,9 @@ interface ProgressStatus {
   memoryUsedMb: number;
   memoryTotalMb: number;
   memoryUsagePercent: number;
+  gpuUsagePercent: number;
+  gpuMemoryUsedMb: number;
+  gpuMemoryTotalMb: number;
   lastUpdated: number;
 }
 
@@ -60,6 +63,9 @@ interface ResourceSnapshot {
   cpuUsagePercent: number;
   memoryUsedMb: number;
   memoryUsagePercent: number;
+  gpuUsagePercent: number;
+  gpuMemoryUsedMb: number;
+  gpuMemoryTotalMb: number;
 }
 
 interface LlmRequestEntry {
@@ -95,6 +101,8 @@ export default function Dashboard() {
   const [status, setStatus] = useState<ProgressStatus | null>(null);
   const [connected, setConnected] = useState(false);
   const [selectedType, setSelectedType] = useState<string>('ALL');  // 필터: ALL, METHOD, CLASS, FIELD, PACKAGE
+  const [isPaused, setIsPaused] = useState(false);  // Recent Renames 업데이트 일시정지
+  const [pausedRenames, setPausedRenames] = useState<RenameEntry[]>([]);  // 일시정지 시점의 데이터
 
   useEffect(() => {
     // Polling - API를 통해 status.json 가져오기
@@ -159,6 +167,9 @@ export default function Dashboard() {
           memoryUsedMb={status.memoryUsedMb}
           memoryTotalMb={status.memoryTotalMb}
           memoryUsagePercent={status.memoryUsagePercent}
+          gpuUsagePercent={status.gpuUsagePercent}
+          gpuMemoryUsedMb={status.gpuMemoryUsedMb}
+          gpuMemoryTotalMb={status.gpuMemoryTotalMb}
           resourceHistory={status.resourceHistory || []}
         />
       </div>
@@ -221,6 +232,7 @@ export default function Dashboard() {
           classDeepseekQueueSize={status.classDeepseekQueueSize}
           classQwenQueueSize={status.classQwenQueueSize}
           classRenameQueueSize={status.classRenameQueueSize}
+          currentIteration={status.currentIteration}
         />
       </div>
 
@@ -242,15 +254,43 @@ export default function Dashboard() {
       {status.recentRenames && status.recentRenames.length > 0 && (
         <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 border border-purple-500/20">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold flex items-center gap-2">
-              <span>🔧</span> Recent Renames
-            </h2>
+            <div className="flex items-center gap-4">
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                <span>🔧</span> Recent Renames
+              </h2>
+              {/* Pause/Resume Button */}
+              <button
+                onClick={() => {
+                  if (!isPaused) {
+                    setPausedRenames([...status.recentRenames]);
+                  }
+                  setIsPaused(!isPaused);
+                }}
+                className={`px-3 py-1 rounded text-xs font-medium transition-all flex items-center gap-1 ${
+                  isPaused
+                    ? 'bg-green-600 hover:bg-green-500 text-white'
+                    : 'bg-yellow-600 hover:bg-yellow-500 text-white'
+                }`}
+              >
+                {isPaused ? (
+                  <><span>▶</span> Resume</>
+                ) : (
+                  <><span>⏸</span> Pause</>
+                )}
+              </button>
+              {isPaused && (
+                <span className="text-xs text-yellow-400 animate-pulse">
+                  Updates paused - {status.recentRenames.length - pausedRenames.length} new items
+                </span>
+              )}
+            </div>
             {/* Category Filter */}
             <div className="flex gap-2">
               {['ALL', 'METHOD', 'CLASS', 'FIELD', 'PACKAGE'].map((type) => {
+                const displayRenames = isPaused ? pausedRenames : status.recentRenames;
                 const count = type === 'ALL'
-                  ? status.recentRenames.length
-                  : status.recentRenames.filter(r => r.type === type).length;
+                  ? displayRenames.length
+                  : displayRenames.filter(r => r.type === type).length;
                 return (
                   <button
                     key={type}
@@ -268,8 +308,9 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="space-y-3">
-            {status.recentRenames
+            {(isPaused ? pausedRenames : status.recentRenames)
               .filter(rename => selectedType === 'ALL' || rename.type === selectedType)
+              .slice().reverse()
               .map((rename, index) => (
                 <RenameCard key={index} rename={rename} />
               ))}
@@ -434,7 +475,7 @@ function RenameCard({ rename }: { rename: RenameEntry }) {
       )}
 
       {/* References Updated */}
-      {rename.referencesUpdated && rename.referencesUpdated > 0 && (
+      {rename.referencesUpdated > 0 && (
         <div className="bg-blue-900/10 rounded px-2 py-1 border border-blue-600/30">
           <span className="text-xs text-blue-400">🔗 References Updated: {rename.referencesUpdated} file(s)</span>
           {rename.updatedFiles && rename.updatedFiles.length > 0 && (

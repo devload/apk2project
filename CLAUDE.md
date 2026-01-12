@@ -1001,5 +1001,157 @@ For questions or issues:
 
 ---
 
+---
+
+## Environment Setup
+
+### Required Tools
+
+| Tool | Version | Purpose | Installation |
+|------|---------|---------|--------------|
+| **JDK** | 17+ | Kotlin/JVM runtime | `brew install openjdk@17` |
+| **JADX** | 1.5+ | DEX decompiler | `brew install jadx` |
+| **APKTool** | 2.9+ | Resource extractor | `brew install apktool` |
+| **Node.js** | 20+ | Dashboard runtime | `brew install node` |
+| **Ollama** | 0.13+ | Local AI inference | `brew install ollama` |
+
+### Ollama Models (Installed)
+
+```bash
+# Currently installed models
+ollama list
+# NAME                  SIZE
+# deepseek-r1:latest    5.2 GB    # Reasoning model for deobfuscation
+# qwen2.5:latest        4.7 GB    # Korean translation support
+
+# Pull additional models
+ollama pull deepseek-coder:6.7b   # Code-specialized model
+ollama pull llama3.2              # General purpose
+```
+
+### Project Initialization
+
+```bash
+# Clone and build
+git clone https://github.com/devload/apk2project.git
+cd apk2project
+
+# Build Kotlin CLI
+./gradlew build
+
+# Install dashboard dependencies
+cd dashboard
+npm install
+cd ..
+
+# Verify installation
+./gradlew run --args="--help"
+```
+
+---
+
+## Quick Reference Commands
+
+### CLI Commands
+
+```bash
+# Full project generation
+./gradlew run --args="generate input.apk -o ./output"
+
+# Decompile only
+./gradlew run --args="decompile input.apk -o ./decompiled"
+
+# Analyze dependencies
+./gradlew run --args="analyze input.apk"
+
+# Fix compilation errors
+./gradlew run --args="fix ./source-dir"
+
+# AI deobfuscation (Ollama)
+./gradlew run --args="fix ./source-dir --ai --model deepseek-r1"
+
+# AI deobfuscation with Korean translation
+./gradlew run --args="fix ./source-dir --ai --korean --translation-model qwen2.5"
+
+# Verify project
+./gradlew run --args="verify ./project-dir"
+```
+
+### Dashboard Commands
+
+```bash
+# Start Next.js dashboard (Terminal 1)
+cd dashboard && npm run dev
+
+# Run deobfuscation (Terminal 2)
+./gradlew run --args="fix ./sources --ai"
+
+# Access dashboard
+# http://localhost:3000
+```
+
+### Utility Commands
+
+```bash
+# Check Ollama status
+curl http://localhost:11434/api/tags
+
+# Start Ollama service
+brew services start ollama
+
+# Run specific model
+ollama run deepseek-r1
+ollama run qwen2.5
+
+# Build fat JAR
+./gradlew fatJar
+# Output: build/libs/apk2project-1.0.0-all.jar
+```
+
+---
+
+## Status File Schema
+
+The pipeline writes progress to `.apk2project/status.json`:
+
+```json
+{
+  "phase": "AI Analysis",
+  "currentPhase": "ANALYZING_METHODS",
+  "status": "Processing method batch...",
+  "isRunning": true,
+  "totalClasses": 1234,
+  "totalMethods": 5678,
+  "processedMethods": 100,
+  "renamedMethods": 45,
+  "parsedFiles": 500,
+  "totalFilesToParse": 500,
+  "callGraphEdges": 10000,
+  "phase1Progress": 100,
+  "phase2Progress": 100,
+  "phase3Progress": 25,
+  "cpuUsagePercent": 45.2,
+  "memoryUsedMb": 2048,
+  "resourceHistory": [...],
+  "recentRenames": [...],
+  "lastUpdated": 1736654400000
+}
+```
+
+---
+
+## Git Branch Info
+
+**Current Branch:** `feature/nextjs-dashboard-parallel-processing`
+
+Key features in this branch:
+- Next.js 16 + React 19 dashboard
+- Parallel file parsing (8 workers)
+- Real-time CPU/Memory monitoring
+- Workflow visualization (React Flow)
+- Code diff viewer (Syntax Highlighter)
+
+---
+
 **Last Updated:** 2026-01-12
 **Version:** 1.0.0 (Next.js Dashboard + Parallel Processing)

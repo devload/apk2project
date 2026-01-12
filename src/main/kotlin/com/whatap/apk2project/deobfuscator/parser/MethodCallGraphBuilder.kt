@@ -363,10 +363,15 @@ class MethodCallGraphBuilder {
 
         // Priority 1: True leaves (난독화된 메소드를 호출하지 않음)
         val trueLeaves = unprocessedObfuscated.filter { method ->
-            val outgoingEdges = callGraph.outgoingEdgesOf(method.id)
-            val callees = outgoingEdges.map { callGraph.getEdgeTarget(it) }
-                .mapNotNull { methods[it] }
-            callees.none { it.isObfuscated }
+            // Vertex가 그래프에 존재하는지 먼저 확인
+            if (!callGraph.containsVertex(method.id)) {
+                true  // 그래프에 없으면 leaf로 간주
+            } else {
+                val outgoingEdges = callGraph.outgoingEdgesOf(method.id)
+                val callees = outgoingEdges.map { callGraph.getEdgeTarget(it) }
+                    .mapNotNull { methods[it] }
+                callees.none { it.isObfuscated }
+            }
         }
 
         logger.info("[Priority 1] true leaves: ${trueLeaves.size}")
@@ -377,13 +382,18 @@ class MethodCallGraphBuilder {
 
         // Priority 2: 호출하는 난독화된 메소드가 모두 처리됨
         val ready = unprocessedObfuscated.filter { method ->
-            val outgoingEdges = callGraph.outgoingEdgesOf(method.id)
-            val callees = outgoingEdges.map { callGraph.getEdgeTarget(it) }
-                .mapNotNull { methods[it] }
-                .filter { it.isObfuscated }
+            // Vertex가 그래프에 존재하는지 먼저 확인
+            if (!callGraph.containsVertex(method.id)) {
+                false  // 그래프에 없으면 Priority 2 해당 안됨
+            } else {
+                val outgoingEdges = callGraph.outgoingEdgesOf(method.id)
+                val callees = outgoingEdges.map { callGraph.getEdgeTarget(it) }
+                    .mapNotNull { methods[it] }
+                    .filter { it.isObfuscated }
 
-            // 난독화된 callee가 있지만 모두 처리됨
-            callees.isNotEmpty() && callees.all { it.id in processedMethods }
+                // 난독화된 callee가 있지만 모두 처리됨
+                callees.isNotEmpty() && callees.all { it.id in processedMethods }
+            }
         }
 
         logger.info("[Priority 2] dependencies met: ${ready.size}")
@@ -395,11 +405,16 @@ class MethodCallGraphBuilder {
         // Priority 3: 처리되지 않은 callee가 가장 적은 메소드
         // (순환 참조나 복잡한 의존성 해결 - 강제로 처리 시작)
         val withUnprocessedCount = unprocessedObfuscated.map { method ->
-            val outgoingEdges = callGraph.outgoingEdgesOf(method.id)
-            val callees = outgoingEdges.map { callGraph.getEdgeTarget(it) }
-                .mapNotNull { methods[it] }
-                .filter { it.isObfuscated && it.id !in processedMethods }
-            method to callees.size
+            // Vertex가 그래프에 존재하는지 먼저 확인
+            if (!callGraph.containsVertex(method.id)) {
+                method to 0  // 그래프에 없으면 callee 0개로 간주
+            } else {
+                val outgoingEdges = callGraph.outgoingEdgesOf(method.id)
+                val callees = outgoingEdges.map { callGraph.getEdgeTarget(it) }
+                    .mapNotNull { methods[it] }
+                    .filter { it.isObfuscated && it.id !in processedMethods }
+                method to callees.size
+            }
         }
 
         if (withUnprocessedCount.isEmpty()) {

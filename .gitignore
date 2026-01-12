@@ -1,5 +1,7 @@
 # Decompiled/Reversed projects (DO NOT COMMIT)
 hanacard_project/
+hanacard_decompiled/
+*_decompiled/
 playstore_project/
 *_project/
 decompiled_output/

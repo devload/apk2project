@@ -48,6 +48,11 @@ class ProgressMonitor(
     private val osBean = ManagementFactory.getOperatingSystemMXBean() as OperatingSystemMXBean
     private var cpuSamplingTimer: java.util.Timer? = null
 
+    // GPU 샘플링 (Mac Apple Silicon)
+    @Volatile private var latestGpuUsage: Double = 0.0
+    @Volatile private var latestGpuMemoryUsedMb: Long = 0
+    @Volatile private var latestGpuMemoryTotalMb: Long = 0
+
     // 현재 상태
     @Volatile var currentPhase: PipelinePhase = PipelinePhase.INITIALIZING
     @Volatile var phase: String = "Initializing"  // 하위 호환성
@@ -98,12 +103,44 @@ class ProgressMonitor(
 
         // Note: DashboardServer is now started in FixCommand.run() before this method is called
 
-        // CPU 샘플링 시작 (1초마다 OS 전체 CPU 측정)
-        cpuSamplingTimer = fixedRateTimer("cpu-sampler", daemon = true, initialDelay = 0, period = 1000) {
+        // CPU/GPU 샘플링 시작 (1초마다 OS 전체 CPU 및 GPU 측정)
+        cpuSamplingTimer = fixedRateTimer("resource-sampler", daemon = true, initialDelay = 0, period = 1000) {
             try {
+                // CPU 샘플링
                 val cpu = (osBean.systemCpuLoad * 100).coerceIn(0.0, 100.0)
                 if (!cpu.isNaN()) {
                     latestCpuUsage = cpu
+                }
+
+                // GPU 샘플링 (Mac Apple Silicon - ioreg 사용)
+                try {
+                    val process = ProcessBuilder("ioreg", "-r", "-d", "1", "-c", "IOAccelerator")
+                        .redirectErrorStream(true)
+                        .start()
+                    val output = process.inputStream.bufferedReader().readText()
+                    process.waitFor(500, TimeUnit.MILLISECONDS)
+
+                    // PerformanceStatistics에서 파싱 (ioreg JSON-like format)
+                    // "Device Utilization %"=98
+                    val gpuMatch = Regex("\"Device Utilization %\"=(\\d+)").find(output)
+                    if (gpuMatch != null) {
+                        latestGpuUsage = gpuMatch.groupValues[1].toDouble()
+                    }
+
+                    // "In use system memory"=20151549952 (NOT "In use system memory (driver)")
+                    // 정확한 키만 매칭하기 위해 뒤에 }나 ,가 오는 패턴 사용
+                    val memUsedMatch = Regex("\"In use system memory\"=(\\d+)[,}]").find(output)
+                    if (memUsedMatch != null) {
+                        latestGpuMemoryUsedMb = memUsedMatch.groupValues[1].toLong() / (1024 * 1024)
+                    }
+
+                    // "Alloc system memory"=37525897216
+                    val memTotalMatch = Regex("\"Alloc system memory\"=(\\d+)").find(output)
+                    if (memTotalMatch != null) {
+                        latestGpuMemoryTotalMb = memTotalMatch.groupValues[1].toLong() / (1024 * 1024)
+                    }
+                } catch (e: Exception) {
+                    // GPU 샘플링 실패시 무시 (Linux/Windows에서는 작동 안 함)
                 }
             } catch (e: Exception) {
                 // Ignore sampling errors
@@ -276,12 +313,15 @@ class ProgressMonitor(
             (memoryUsed.toDouble() / memoryTotal * 100).coerceIn(0.0, 100.0)
         } else 0.0
 
-        // 리소스 스냅샷 추가
+        // 리소스 스냅샷 추가 (CPU + GPU)
         resourceHistory.add(ResourceSnapshot(
             timestamp = System.currentTimeMillis(),
             cpuUsagePercent = cpuUsage,
             memoryUsedMb = memoryUsed,
-            memoryUsagePercent = memoryUsagePercent
+            memoryUsagePercent = memoryUsagePercent,
+            gpuUsagePercent = latestGpuUsage,
+            gpuMemoryUsedMb = latestGpuMemoryUsedMb,
+            gpuMemoryTotalMb = latestGpuMemoryTotalMb
         ))
 
         // 최대 개수 유지
@@ -350,6 +390,9 @@ class ProgressMonitor(
             memoryUsedMb = memoryUsed,
             memoryTotalMb = memoryTotal,
             memoryUsagePercent = memoryUsagePercent,
+            gpuUsagePercent = latestGpuUsage,
+            gpuMemoryUsedMb = latestGpuMemoryUsedMb,
+            gpuMemoryTotalMb = latestGpuMemoryTotalMb,
             lastUpdated = System.currentTimeMillis()
         )
 
@@ -486,6 +529,10 @@ data class ProgressStatus(
     val memoryUsedMb: Long,
     val memoryTotalMb: Long,
     val memoryUsagePercent: Double,
+    // GPU resources
+    val gpuUsagePercent: Double = 0.0,
+    val gpuMemoryUsedMb: Long = 0,
+    val gpuMemoryTotalMb: Long = 0,
     val lastUpdated: Long
 )
 
@@ -522,7 +569,10 @@ data class ResourceSnapshot(
     val timestamp: Long,            // 시간 (밀리초)
     val cpuUsagePercent: Double,    // CPU 사용률 (%)
     val memoryUsedMb: Long,         // 메모리 사용량 (MB)
-    val memoryUsagePercent: Double  // 메모리 사용률 (%)
+    val memoryUsagePercent: Double, // 메모리 사용률 (%)
+    val gpuUsagePercent: Double = 0.0,    // GPU 사용률 (%)
+    val gpuMemoryUsedMb: Long = 0,        // GPU 메모리 사용량 (MB)
+    val gpuMemoryTotalMb: Long = 0        // GPU 메모리 전체 (MB)
 )
 
 /**
@@ -538,3 +588,4 @@ enum class PipelinePhase {
     COMPLETE,               // 완료
     FAILED                  // 실패
 }
+

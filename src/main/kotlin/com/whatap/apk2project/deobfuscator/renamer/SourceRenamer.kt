@@ -5,9 +5,13 @@ import com.github.javaparser.ast.CompilationUnit
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration
 import com.github.javaparser.ast.body.FieldDeclaration
 import com.github.javaparser.ast.body.MethodDeclaration
+import com.github.javaparser.ast.body.Parameter
+import com.github.javaparser.ast.body.VariableDeclarator
 import com.github.javaparser.ast.comments.LineComment
 import com.github.javaparser.ast.expr.MethodCallExpr
 import com.github.javaparser.ast.expr.NameExpr
+import com.github.javaparser.ast.stmt.CatchClause
+import com.github.javaparser.ast.stmt.ForEachStmt
 import com.github.javaparser.ast.visitor.ModifierVisitor
 import com.github.javaparser.ast.visitor.Visitable
 import com.whatap.apk2project.deobfuscator.client.MethodAnalysisResult
@@ -45,6 +49,7 @@ class SourceRenamer {
 
             val cu = parseResult.result.orElseThrow()
             var renamed = false
+            var actualRenamedVars: Map<String, com.whatap.apk2project.deobfuscator.client.VariableRename> = emptyMap()
 
             cu.accept(object : ModifierVisitor<Void>() {
                 override fun visit(n: MethodDeclaration, arg: Void?): Visitable {
@@ -64,16 +69,18 @@ class SourceRenamer {
                         // 메소드 이름 변경
                         n.setName(analysis.suggestedName)
 
-                        // 로컬 변수 리네이밍
+                        // 로컬 변수 리네이밍 (실제 적용된 것만 반환)
                         if (analysis.localVariables.isNotEmpty()) {
-                            renameLocalVariables(n, analysis.localVariables)
+                            actualRenamedVars = renameLocalVariables(n, analysis.localVariables)
                         }
 
                         renamed = true
 
                         logger.info("Renamed method: ${methodNode.methodName} -> ${analysis.suggestedName}")
-                        if (analysis.localVariables.isNotEmpty()) {
-                            logger.info("  Renamed ${analysis.localVariables.size} local variables")
+                        if (actualRenamedVars.isNotEmpty()) {
+                            logger.info("  Renamed ${actualRenamedVars.size} local variables: ${actualRenamedVars.keys.joinToString(", ")}")
+                        } else if (analysis.localVariables.isNotEmpty()) {
+                            logger.debug("  AI suggested ${analysis.localVariables.size} variable renames but none were valid")
                         }
                     }
                     return super.visit(n, arg)
@@ -96,7 +103,9 @@ class SourceRenamer {
                 )
                 renameHistory.add(entry)
 
-                RenameResult.Success(entry)
+                // 실제 적용된 변수 리네임만 반환
+                val actualVarRenamesSimple = actualRenamedVars.mapValues { it.value.suggestedName }
+                RenameResult.Success(entry, actualVarRenamesSimple)
             } else {
                 RenameResult.Failure("Method not found: ${methodNode.methodName}")
             }
@@ -492,22 +501,100 @@ class SourceRenamer {
     }
 
     /**
-     * 로컬 변수 리네이밍
+     * 로컬 변수 리네이밍 (선언 + 사용 모두 처리)
+     * @return 실제로 적용된 유효한 리네임 맵
      */
     private fun renameLocalVariables(
         method: MethodDeclaration,
         variableRenames: Map<String, com.whatap.apk2project.deobfuscator.client.VariableRename>
-    ) {
+    ): Map<String, com.whatap.apk2project.deobfuscator.client.VariableRename> {
+        // 먼저 실제로 존재하는 변수 이름 수집
+        val existingNames = mutableSetOf<String>()
+
+        // 메소드 파라미터
+        method.parameters.forEach { existingNames.add(it.nameAsString) }
+
+        // 로컬 변수 선언
+        method.findAll(VariableDeclarator::class.java).forEach { existingNames.add(it.nameAsString) }
+
+        // catch 파라미터
+        method.findAll(CatchClause::class.java).forEach { existingNames.add(it.parameter.nameAsString) }
+
+        // for-each 변수 (for (Type var : iterable))
+        method.findAll(ForEachStmt::class.java).forEach { foreach ->
+            foreach.variable.variables.forEach { existingNames.add(it.nameAsString) }
+        }
+
+        // 실제 존재하는 변수만 필터링
+        val validRenames = variableRenames.filter { (oldName, _) ->
+            val exists = existingNames.contains(oldName)
+            if (!exists) {
+                logger.debug("  Skipping invalid variable rename: $oldName (not found in method)")
+            }
+            exists
+        }
+
+        if (validRenames.isEmpty()) {
+            logger.debug("  No valid variable renames to apply")
+            return emptyMap()
+        }
+
+        // 0. 메소드 파라미터 리네이밍 먼저 처리 (for (Parameter p : method.getParameters()))
+        method.parameters.forEach { param ->
+            val rename = validRenames[param.nameAsString]
+            if (rename != null) {
+                param.setName(rename.suggestedName)
+                logger.debug("  Renamed parameter: ${rename.originalName} -> ${rename.suggestedName}")
+            }
+        }
+
         method.accept(object : ModifierVisitor<Void>() {
-            override fun visit(n: NameExpr, arg: Void?): Visitable {
-                val rename = variableRenames[n.nameAsString]
+            // 1. 변수 선언 리네이밍 (int x = 0;)
+            override fun visit(n: VariableDeclarator, arg: Void?): Visitable {
+                val rename = validRenames[n.nameAsString]
                 if (rename != null) {
                     n.setName(rename.suggestedName)
-                    logger.debug("  Renamed variable: ${rename.originalName} -> ${rename.suggestedName}")
+                    logger.debug("  Renamed variable declaration: ${rename.originalName} -> ${rename.suggestedName}")
+                }
+                return super.visit(n, arg)
+            }
+
+            // 2. for-each 루프 변수 리네이밍 (for (byte[] bArr2 : list))
+            override fun visit(n: ForEachStmt, arg: Void?): Visitable {
+                val variable = n.variable.variables.firstOrNull()
+                if (variable != null) {
+                    val rename = validRenames[variable.nameAsString]
+                    if (rename != null) {
+                        variable.setName(rename.suggestedName)
+                        logger.debug("  Renamed foreach variable: ${rename.originalName} -> ${rename.suggestedName}")
+                    }
+                }
+                return super.visit(n, arg)
+            }
+
+            // 3. catch 파라미터 리네이밍 (catch (Exception e))
+            override fun visit(n: CatchClause, arg: Void?): Visitable {
+                val param = n.parameter
+                val rename = validRenames[param.nameAsString]
+                if (rename != null) {
+                    param.setName(rename.suggestedName)
+                    logger.debug("  Renamed catch parameter: ${rename.originalName} -> ${rename.suggestedName}")
+                }
+                return super.visit(n, arg)
+            }
+
+            // 4. 변수 사용 리네이밍 (x + 1)
+            override fun visit(n: NameExpr, arg: Void?): Visitable {
+                val rename = validRenames[n.nameAsString]
+                if (rename != null) {
+                    n.setName(rename.suggestedName)
+                    logger.debug("  Renamed variable usage: ${rename.originalName} -> ${rename.suggestedName}")
                 }
                 return super.visit(n, arg)
             }
         }, null)
+
+        return validRenames
     }
 
     /**
@@ -580,7 +667,10 @@ data class RenameEntry(
 )
 
 sealed class RenameResult {
-    data class Success(val entry: RenameEntry) : RenameResult()
+    data class Success(
+        val entry: RenameEntry,
+        val actualVariableRenames: Map<String, String> = emptyMap()  // 실제 적용된 변수 리네임
+    ) : RenameResult()
     data class Failure(val reason: String) : RenameResult()
 }
 

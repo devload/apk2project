@@ -236,18 +236,22 @@ Respond with JSON only:
   "name":"methodName",
   "desc":"what it does",
   "reasoning":"why this name",
-  "vars":{"oldVarName":"newVarName","i":"index","str":"resultString"}
+  "vars":{"oldVarName":"newVarName"}
 }
 
 Rules:
 - Analyze the CODE BEHAVIOR, not the method name itself
 - Do NOT simply translate non-English method names to English
 - If method name looks generic (like "meaningfulMethod", "deobfuscatedMethodName"), analyze the actual code logic instead
-- vars: only rename obfuscated variables (single char or numbered like i2, str3)
-- skip well-named variables
-- keep names concise
 
-Example: {"name":"calculateTotal","desc":"sums values","reasoning":"clearly indicates calculation","vars":{"i":"sum","str":"result"}}"""
+IMPORTANT - vars rules:
+- ONLY rename LOCAL VARIABLE DECLARATIONS (e.g., "int i", "String str", "ArrayList arrayList")
+- Variables to rename: single-char names (i, j, k), numbered names (i2, str3), or generic names (obj, temp)
+- DO NOT include: type names (ArrayList, String), field accesses (this.xxx), method calls
+- If no variables need renaming, use empty object: "vars":{}
+- Example: in "ArrayList list = new ArrayList()", the variable is "list", NOT "ArrayList"
+
+Example: {"name":"calculateTotal","desc":"sums values","reasoning":"indicates calculation","vars":{"i":"counter","str":"result"}}"""
     }
 
     /**
@@ -513,18 +517,25 @@ Example: {"name":"com.payment.api","desc":"payment processing API","reasoning":"
 
     /**
      * JSON 추출
+     * DeepSeek-R1의 <think> 태그 제거 포함
      */
     private fun extractJson(text: String): String? {
-        val start = text.indexOf("{")
+        // DeepSeek-R1의 <think>...</think> 태그 제거
+        val cleanedText = text
+            .replace(Regex("<think>[\\s\\S]*?</think>"), "")
+            .replace(Regex("<think>[\\s\\S]*"), "")  // 닫히지 않은 <think> 태그도 제거
+            .trim()
+
+        val start = cleanedText.indexOf("{")
         if (start == -1) return null
 
         var depth = 0
-        for (i in start until text.length) {
-            when (text[i]) {
+        for (i in start until cleanedText.length) {
+            when (cleanedText[i]) {
                 '{' -> depth++
                 '}' -> {
                     depth--
-                    if (depth == 0) return text.substring(start, i + 1)
+                    if (depth == 0) return cleanedText.substring(start, i + 1)
                 }
             }
         }

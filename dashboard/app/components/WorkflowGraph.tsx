@@ -49,6 +49,7 @@ interface WorkflowGraphProps {
   classDeepseekQueueSize?: number;
   classQwenQueueSize?: number;
   classRenameQueueSize?: number;
+  currentIteration?: number;
 }
 
 export default function WorkflowGraph({
@@ -75,6 +76,7 @@ export default function WorkflowGraph({
   classDeepseekQueueSize = 0,
   classQwenQueueSize = 0,
   classRenameQueueSize = 0,
+  currentIteration = 1,
 }: WorkflowGraphProps) {
   // 가로/세로 레이아웃 토글
   const [isVertical, setIsVertical] = useState(false);
@@ -366,9 +368,9 @@ export default function WorkflowGraph({
       });
 
     } else {
-      // 가로 레이아웃 (기존)
-      const centerY = 400;
-      const nodeSpacing = 120;
+      // 가로 레이아웃 (간소화된 버전 - 워커들을 요약 노드로 통합)
+      const centerY = 300;
+      const nodeSpacing = 200;  // 노드 간 간격 증가
 
       // 1. Source Files
       nodes.push({
@@ -383,15 +385,15 @@ export default function WorkflowGraph({
       // 2. Phase 1: File Parsing
       const isPhase1Active = currentPhase.includes('PHASE1_FILE_PARSING');
       const parseLabel = isPhase1Active
-        ? `📝 Parse Files\nFiles: ${parsedFiles}/${totalFilesToParse}\nProgress: ${phase1Progress.toFixed(1)}%`
+        ? `📝 Parse Files\n${parsedFiles}/${totalFilesToParse}\n${phase1Progress.toFixed(1)}%`
         : parsedFiles > 0
-        ? `📝 Parse Files\n${parsedFiles} files\n✓ ${phase1Progress.toFixed(0)}%`
+        ? `📝 Parse Files\n${parsedFiles} files ✓`
         : '📝 Parse Files';
 
       nodes.push({
         id: 'parse',
         data: { label: parseLabel },
-        position: { x: 280, y: centerY },
+        position: { x: 250, y: centerY },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
         style: getNodeStyle(isPhase1Active ? 'processing' : phase1Progress > 0 ? 'completed' : 'pending'),
@@ -400,205 +402,101 @@ export default function WorkflowGraph({
       // 3. Phase 2: Call Graph Building
       const isPhase2Active = currentPhase.includes('PHASE2_CALL_GRAPH');
       const graphLabel = isPhase2Active
-        ? `🔗 Build Graph\nClasses: ${callGraphClasses}/${totalCallGraphClasses}\nProgress: ${phase2Progress.toFixed(1)}%`
+        ? `🔗 Call Graph\n${callGraphClasses}/${totalCallGraphClasses}\n${phase2Progress.toFixed(1)}%`
         : callGraphEdges > 0
-        ? `🔗 Build Graph\n${totalClasses} classes\n${callGraphEdges} edges\n✓ ${phase2Progress.toFixed(0)}%`
-        : '🔗 Build Graph';
+        ? `🔗 Call Graph\n${totalClasses} cls\n${callGraphEdges} edges ✓`
+        : '🔗 Call Graph';
 
       nodes.push({
         id: 'graph',
         data: { label: graphLabel },
-        position: { x: 510, y: centerY },
+        position: { x: 450, y: centerY },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
         style: getNodeStyle(isPhase2Active ? 'processing' : phase2Progress > 0 ? 'completed' : 'pending'),
       });
 
-      // 4. Leaf Methods
-      const isPhase4Active = currentPhase.includes('PHASE3_AI_ANALYSIS');
-      const leafLabel = isPhase4Active
-        ? `🎯 Leaf Methods\n${processedMethods}/${leafMethods}\nProgress: ${phase3Progress.toFixed(1)}%`
+      // 4. Leaf Methods (Phase 3 시작점)
+      const isPhase3Active = currentPhase.includes('PHASE3_AI_ANALYSIS');
+      const leafLabel = isPhase3Active
+        ? `🎯 Methods\n${processedMethods}/${leafMethods}\n${phase3Progress.toFixed(1)}%`
         : leafMethods > 0
-        ? `🎯 Leaf Methods\n${leafMethods} found\n✓ ${phase3Progress.toFixed(0)}%`
-        : `🎯 Leaf Methods\nWaiting...`;
+        ? `🎯 Methods\n${leafMethods} found ✓`
+        : `🎯 Methods\nWaiting...`;
 
       nodes.push({
         id: 'leaf',
         data: { label: leafLabel },
-        position: { x: 740, y: centerY },
+        position: { x: 650, y: centerY },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
-        style: getNodeStyle(isPhase4Active && processedMethods < leafMethods ? 'processing' : phase3Progress > 0 ? 'completed' : 'pending'),
+        style: getNodeStyle(isPhase3Active && processedMethods < leafMethods ? 'processing' : phase3Progress > 0 ? 'completed' : 'pending'),
       });
 
-      // 5a. DeepSeek Queue
-      const deepseekQueueLabelH = deepseekQueueSize > 0
-        ? `📦 Q1\n${deepseekQueueSize}`
-        : `📦 Q1`;
+      // 5. DeepSeek Workers (요약 노드 - 개별 워커 대신)
+      const activeDeepseek = analysisRequests.length;
+      const deepseekLabel = isPhase3Active
+        ? `🤖 DeepSeek\n${workerCount} workers\n${deepseekQueueSize > 0 ? `Queue: ${deepseekQueueSize}` : `Active: ${activeDeepseek}`}`
+        : `🤖 DeepSeek\n${workerCount} workers`;
 
       nodes.push({
-        id: 'deepseek-queue',
-        data: { label: deepseekQueueLabelH },
-        position: { x: 900, y: centerY },
+        id: 'deepseek-0',  // ID 유지 (엣지 연결용)
+        data: { label: deepseekLabel },
+        position: { x: 870, y: centerY },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
-        style: getNodeStyle(deepseekQueueSize > 0 ? 'processing' : 'pending'),
+        style: getNodeStyle(
+          isPhase3Active && activeDeepseek > 0 ? 'processing' :
+          currentPhase.includes('PHASE4_CLASSES') || currentPhase === 'COMPLETE' ? 'completed' :
+          'pending'
+        ),
       });
 
-      // 5b. DeepSeek Analysis 노드들 (세로 배치)
-      const startY = centerY - ((workerCount - 1) * nodeSpacing / 2);
-      for (let i = 0; i < workerCount; i++) {
-        const request = analysisRequests[i];
-        const isProcessing = isPhase4Active && request;
-
-        let label = `🤖 DeepSeek ${i + 1}`;
-        if (request) {
-          const methodShort = request.methodName.length > 20
-            ? request.methodName.substring(0, 20) + '...'
-            : request.methodName;
-          const duration = (request.durationMs / 1000).toFixed(1);
-          const status = request.success ? '✓' : '✗';
-          label = `🤖 DeepSeek ${i + 1}\n${status} ${methodShort}\n(${duration}s)`;
-        }
-
-        nodes.push({
-          id: `deepseek-${i}`,
-          data: { label },
-          position: { x: 1100, y: startY + (i * nodeSpacing) },
-          sourcePosition: Position.Right,
-          targetPosition: Position.Left,
-          style: getNodeStyle(
-            isProcessing ? 'processing' :
-            currentPhase.includes('PHASE4_CLASSES') || currentPhase === 'COMPLETE' ? 'completed' :
-            'pending'
-          ),
-        });
-      }
-
-      // 6a. Qwen Queue
-      const qwenQueueLabelH = qwenQueueSize > 0
-        ? `📦 Q2\n${qwenQueueSize}`
-        : `📦 Q2`;
+      // 6. Qwen Workers (요약 노드)
+      const activeQwen = translationRequests.length;
+      const qwenLabel = isPhase3Active
+        ? `🌏 Qwen\n${workerCount} workers\n${qwenQueueSize > 0 ? `Queue: ${qwenQueueSize}` : `Active: ${activeQwen}`}`
+        : `🌏 Qwen\n${workerCount} workers`;
 
       nodes.push({
-        id: 'qwen-queue',
-        data: { label: qwenQueueLabelH },
-        position: { x: 1260, y: centerY },
+        id: 'qwen-0',  // ID 유지 (엣지 연결용)
+        data: { label: qwenLabel },
+        position: { x: 1090, y: centerY },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
-        style: getNodeStyle(qwenQueueSize > 0 ? 'processing' : 'pending'),
+        style: getNodeStyle(isPhase3Active && activeQwen > 0 ? 'processing' : renamedMethods > 0 ? 'completed' : 'pending'),
       });
 
-      // 6b. Qwen Translation 노드들 (세로 배치)
-      for (let i = 0; i < workerCount; i++) {
-        const request = translationRequests[i];
-        const isProcessing = isPhase4Active && request;
-
-        let label = `🌏 Qwen ${i + 1}`;
-        if (request) {
-          const methodShort = request.methodName.length > 20
-            ? request.methodName.substring(0, 20) + '...'
-            : request.methodName;
-          const duration = (request.durationMs / 1000).toFixed(1);
-          const status = request.success ? '✓' : '✗';
-          label = `🌏 Qwen ${i + 1}\n${status} ${methodShort}\n(${duration}s)`;
-        }
-
-        nodes.push({
-          id: `qwen-${i}`,
-          data: { label },
-          position: { x: 1460, y: startY + (i * nodeSpacing) },
-          sourcePosition: Position.Right,
-          targetPosition: Position.Left,
-          style: getNodeStyle(isProcessing ? 'processing' : renamedMethods > 0 ? 'completed' : 'pending'),
-        });
-      }
-
-      // 7a. Rename Queue
-      const renameQueueLabelH = renameQueueSize > 0
-        ? `📦 Q3\n${renameQueueSize}`
-        : `📦 Q3`;
-
-      nodes.push({
-        id: 'rename-queue',
-        data: { label: renameQueueLabelH },
-        position: { x: 1620, y: centerY },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-        style: getNodeStyle(renameQueueSize > 0 ? 'processing' : 'pending'),
-      });
-
-      // 7b. Renamed (집계)
+      // 7. Renamed (결과 집계)
       const successRate = processedMethods > 0
         ? ((renamedMethods / processedMethods) * 100).toFixed(1)
         : '0.0';
       const renamedLabel = renamedMethods > 0
-        ? `✨ Renamed\n${renamedMethods} methods\nSuccess: ${successRate}%${failedMethods > 0 ? `\nFailed: ${failedMethods}` : ''}`
+        ? `✨ Renamed\n${renamedMethods} methods\n${successRate}% success${failedMethods > 0 ? `\n${failedMethods} failed` : ''}`
         : '✨ Renamed\nWaiting...';
 
       nodes.push({
         id: 'renamed',
         data: { label: renamedLabel },
-        position: { x: 1820, y: centerY },
+        position: { x: 1310, y: centerY },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
         style: getNodeStyle(renamedMethods > 0 ? 'completed' : 'pending'),
       });
 
-      // 7d. Phase 4 Class Queues - DeepSeek Queue
-      const classDeepseekQueueLabelH = classDeepseekQueueSize > 0
-        ? `📦 CQ1\n${classDeepseekQueueSize}`
-        : `📦 CQ1`;
-
-      nodes.push({
-        id: 'class-deepseek-queue',
-        data: { label: classDeepseekQueueLabelH },
-        position: { x: 1900, y: centerY },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-        style: getNodeStyle(classDeepseekQueueSize > 0 ? 'processing' : 'pending'),
-      });
-
-      // 7e. Phase 4 Class Queues - Qwen Queue
-      const classQwenQueueLabelH = classQwenQueueSize > 0
-        ? `📦 CQ2\n${classQwenQueueSize}`
-        : `📦 CQ2`;
-
-      nodes.push({
-        id: 'class-qwen-queue',
-        data: { label: classQwenQueueLabelH },
-        position: { x: 1950, y: centerY },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-        style: getNodeStyle(classQwenQueueSize > 0 ? 'processing' : 'pending'),
-      });
-
-      // 7f. Phase 4 Class Queues - Rename Queue
-      const classRenameQueueLabelH = classRenameQueueSize > 0
-        ? `📦 CQ3\n${classRenameQueueSize}`
-        : `📦 CQ3`;
-
-      nodes.push({
-        id: 'class-rename-queue',
-        data: { label: classRenameQueueLabelH },
-        position: { x: 2000, y: centerY },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-        style: getNodeStyle(classRenameQueueSize > 0 ? 'processing' : 'pending'),
-      });
-
-      // 8. Phase 4: Class Renaming (Final)
+      // 8. Phase 4: Class Renaming
       const isPhase4ClassActive = currentPhase.includes('PHASE4_CLASSES');
+      const classQueueTotal = classDeepseekQueueSize + classQwenQueueSize + classRenameQueueSize;
       const classLabel = isPhase4ClassActive
-        ? `🏗️ Phase 4\nRenaming Classes...`
+        ? `🏗️ Classes\nRenaming...\n${classQueueTotal > 0 ? `Queue: ${classQueueTotal}` : ''}`
         : currentPhase === 'COMPLETE' || currentPhase.includes('PHASE5')
-        ? `🏗️ Phase 4\nClasses Renamed`
-        : `🏗️ Phase 4\nClass Renaming`;
+        ? `🏗️ Classes\nRenamed ✓`
+        : `🏗️ Classes\nWaiting...`;
 
       nodes.push({
         id: 'phase4',
         data: { label: classLabel },
-        position: { x: 2100, y: centerY },
+        position: { x: 1530, y: centerY },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
         style: getNodeStyle(
@@ -611,16 +509,16 @@ export default function WorkflowGraph({
       // 9. Phase 5: Save Results
       const isPhase5Active = currentPhase.includes('PHASE5_SAVE');
       const saveLabel = isPhase5Active
-        ? `💾 Phase 5\nSaving Results...`
+        ? `💾 Save\nSaving...`
         : currentPhase === 'COMPLETE'
-        ? `💾 Phase 5\nResults Saved`
-        : `💾 Phase 5\nSave Results`;
+        ? `💾 Save\nComplete ✓`
+        : `💾 Save\nWaiting...`;
 
       nodes.push({
         id: 'phase5',
         type: 'output',
         data: { label: saveLabel },
-        position: { x: 2330, y: centerY },
+        position: { x: 1750, y: centerY },
         targetPosition: Position.Left,
         style: getNodeStyle(
           isPhase5Active ? 'processing' :
@@ -628,14 +526,54 @@ export default function WorkflowGraph({
           'pending'
         ),
       });
+
+      // Hidden queue nodes for edge compatibility (keep IDs but don't display)
+      // These are needed because the edge definitions reference these IDs
+      nodes.push({
+        id: 'deepseek-queue',
+        data: { label: '' },
+        position: { x: 870, y: centerY },
+        style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
+      });
+      nodes.push({
+        id: 'qwen-queue',
+        data: { label: '' },
+        position: { x: 1090, y: centerY },
+        style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
+      });
+      nodes.push({
+        id: 'rename-queue',
+        data: { label: '' },
+        position: { x: 1310, y: centerY },
+        style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
+      });
+      nodes.push({
+        id: 'class-deepseek-queue',
+        data: { label: '' },
+        position: { x: 1530, y: centerY },
+        style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
+      });
+      nodes.push({
+        id: 'class-qwen-queue',
+        data: { label: '' },
+        position: { x: 1530, y: centerY },
+        style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
+      });
+      nodes.push({
+        id: 'class-rename-queue',
+        data: { label: '' },
+        position: { x: 1530, y: centerY },
+        style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
+      });
     }
 
     return nodes;
   }, [isVertical, currentPhase, processedMethods, renamedMethods, leafMethods, batchSize, analysisRequests, translationRequests, parsedFiles, totalFilesToParse, phase1Progress, callGraphClasses, totalCallGraphClasses, phase2Progress, callGraphEdges, totalClasses, phase3Progress, workerCount, deepseekQueueSize, qwenQueueSize, renameQueueSize, classDeepseekQueueSize, classQwenQueueSize, classRenameQueueSize]);
 
-  // 엣지 동적 생성
+  // 엣지 동적 생성 (간소화된 버전)
   const initialEdges: Edge[] = useMemo(() => {
     const edges: Edge[] = [];
+    const isPhase3Active = currentPhase.includes('PHASE3_AI_ANALYSIS');
 
     // Source → Parse
     edges.push({
@@ -662,113 +600,45 @@ export default function WorkflowGraph({
       id: 'e-graph-leaf',
       source: 'graph',
       target: 'leaf',
-      animated: currentPhase.includes('PHASE3_AI_ANALYSIS'),
+      animated: isPhase3Active,
       style: { stroke: '#00d9ff' },
       markerEnd: { type: MarkerType.ArrowClosed, color: '#00d9ff' }
     });
 
-    // Leaf → DeepSeek Queue
+    // Leaf → DeepSeek (직접 연결)
     edges.push({
-      id: 'e-leaf-deepseek-queue',
+      id: 'e-leaf-deepseek',
       source: 'leaf',
-      target: 'deepseek-queue',
-      animated: currentPhase.includes('PHASE3_AI_ANALYSIS') && deepseekQueueSize > 0,
+      target: 'deepseek-0',
+      animated: isPhase3Active,
       style: { stroke: '#00d9ff' },
       markerEnd: { type: MarkerType.ArrowClosed, color: '#00d9ff' }
     });
 
-    // DeepSeek Queue → DeepSeek Workers
-    for (let i = 0; i < workerCount; i++) {
-      edges.push({
-        id: `e-deepseek-queue-worker-${i}`,
-        source: 'deepseek-queue',
-        target: `deepseek-${i}`,
-        animated: currentPhase.includes('PHASE3_AI_ANALYSIS'),
-        style: { stroke: '#00d9ff' },
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#00d9ff' }
-      });
-    }
-
-    // DeepSeek Workers → Qwen Queue
-    for (let i = 0; i < workerCount; i++) {
-      edges.push({
-        id: `e-deepseek-qwen-queue-${i}`,
-        source: `deepseek-${i}`,
-        target: 'qwen-queue',
-        animated: currentPhase.includes('PHASE3_AI_ANALYSIS'),
-        style: { stroke: '#a855f7' },
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#a855f7' }
-      });
-    }
-
-    // Qwen Queue → Qwen Workers
-    for (let i = 0; i < workerCount; i++) {
-      edges.push({
-        id: `e-qwen-queue-worker-${i}`,
-        source: 'qwen-queue',
-        target: `qwen-${i}`,
-        animated: currentPhase.includes('PHASE3_AI_ANALYSIS'),
-        style: { stroke: '#a855f7' },
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#a855f7' }
-      });
-    }
-
-    // Qwen Workers → Rename Queue
-    for (let i = 0; i < workerCount; i++) {
-      edges.push({
-        id: `e-qwen-rename-queue-${i}`,
-        source: `qwen-${i}`,
-        target: 'rename-queue',
-        animated: currentPhase.includes('PHASE3_AI_ANALYSIS'),
-        style: { stroke: '#00ff88' },
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#00ff88' }
-      });
-    }
-
-    // Rename Queue → Renamed
+    // DeepSeek → Qwen
     edges.push({
-      id: 'e-rename-queue-renamed',
-      source: 'rename-queue',
+      id: 'e-deepseek-qwen',
+      source: 'deepseek-0',
+      target: 'qwen-0',
+      animated: isPhase3Active,
+      style: { stroke: '#a855f7' },
+      markerEnd: { type: MarkerType.ArrowClosed, color: '#a855f7' }
+    });
+
+    // Qwen → Renamed
+    edges.push({
+      id: 'e-qwen-renamed',
+      source: 'qwen-0',
       target: 'renamed',
-      animated: renamedMethods > 0,
+      animated: isPhase3Active || renamedMethods > 0,
       style: { stroke: '#00ff88' },
       markerEnd: { type: MarkerType.ArrowClosed, color: '#00ff88' }
     });
 
-    // Renamed → Class DeepSeek Queue
+    // Renamed → Phase 4
     edges.push({
-      id: 'e-renamed-class-deepseek-queue',
+      id: 'e-renamed-phase4',
       source: 'renamed',
-      target: 'class-deepseek-queue',
-      animated: currentPhase.includes('PHASE4_CLASSES') && classDeepseekQueueSize > 0,
-      style: { stroke: '#ffaa00' },
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#ffaa00' }
-    });
-
-    // Class DeepSeek Queue → Class Qwen Queue
-    edges.push({
-      id: 'e-class-deepseek-queue-class-qwen-queue',
-      source: 'class-deepseek-queue',
-      target: 'class-qwen-queue',
-      animated: currentPhase.includes('PHASE4_CLASSES') && classQwenQueueSize > 0,
-      style: { stroke: '#ffaa00' },
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#ffaa00' }
-    });
-
-    // Class Qwen Queue → Class Rename Queue
-    edges.push({
-      id: 'e-class-qwen-queue-class-rename-queue',
-      source: 'class-qwen-queue',
-      target: 'class-rename-queue',
-      animated: currentPhase.includes('PHASE4_CLASSES') && classRenameQueueSize > 0,
-      style: { stroke: '#ffaa00' },
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#ffaa00' }
-    });
-
-    // Class Rename Queue → Phase 4
-    edges.push({
-      id: 'e-class-rename-queue-phase4',
-      source: 'class-rename-queue',
       target: 'phase4',
       animated: currentPhase.includes('PHASE4_CLASSES'),
       style: { stroke: '#ffaa00' },
@@ -786,12 +656,27 @@ export default function WorkflowGraph({
     });
 
     return edges;
-  }, [currentPhase, workerCount, renamedMethods, deepseekQueueSize, qwenQueueSize, renameQueueSize, classDeepseekQueueSize, classQwenQueueSize, classRenameQueueSize]);
+  }, [currentPhase, renamedMethods]);
 
-  const containerHeight = isVertical ? '1600px' : '900px';  // 세로 레이아웃 높이 증가 (큐 + Phase 4, 5 추가)
+  const containerHeight = isVertical ? '1600px' : '450px';  // 가로 레이아웃은 컴팩트하게
 
   return (
     <div style={{ width: '100%', height: containerHeight }} className="bg-slate-900/50 rounded-lg border border-purple-500/20 relative">
+      {/* Iteration Badge */}
+      <div className="absolute top-4 left-4 z-10">
+        <div className={`px-4 py-2 rounded-lg font-semibold text-sm border shadow-lg flex items-center gap-2 ${
+          currentIteration > 1
+            ? 'bg-cyan-600/80 border-cyan-400/30 text-white'
+            : 'bg-slate-700/80 border-slate-500/30 text-gray-300'
+        }`}>
+          <span className="text-lg">🔄</span>
+          <span>Iteration {currentIteration}</span>
+          {currentIteration > 1 && (
+            <span className="text-xs bg-cyan-500/30 px-2 py-0.5 rounded">Loop</span>
+          )}
+        </div>
+      </div>
+
       {/* 레이아웃 토글 버튼 */}
       <div className="absolute top-4 right-4 z-10">
         <button
