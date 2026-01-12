@@ -12,6 +12,7 @@ Android APK 파일을 분석하여 빌드 가능한 Java/Kotlin Gradle 프로젝
 - ⚡ 병렬 처리를 통한 성능 최적화
 - 📊 Call Graph 분석 및 Bottom-up 처리
 - 🇰🇷 한글 번역 지원 (Qwen 모델)
+- 🎮 **GPU 모니터링 (Mac Apple Silicon)**
 
 ---
 
@@ -90,10 +91,11 @@ apk2project/
 │   ├── app/
 │   │   ├── api/status/route.ts       # API endpoint for status.json
 │   │   ├── components/
-│   │   │   ├── SystemMonitor.tsx     # CPU/Memory charts
+│   │   │   ├── SystemMonitor.tsx     # CPU/Memory/GPU charts
 │   │   │   └── WorkflowGraph.tsx     # Pipeline visualization
 │   │   ├── page.tsx                  # Main dashboard page
 │   │   └── layout.tsx
+│   ├── start-dashboard.sh            # Auto port selection script
 │   ├── package.json
 │   ├── next.config.ts
 │   └── tsconfig.json
@@ -565,22 +567,55 @@ class ProgressMonitor(private val outputDir: File) {
     @Volatile var callGraphClasses: Int = 0
     @Volatile var callGraphEdges: Int = 0
 
+    // GPU sampling (Mac Apple Silicon)
+    @Volatile private var latestGpuUsage: Double = 0.0
+    @Volatile private var latestGpuMemoryUsedMb: Long = 0
+    @Volatile private var latestGpuMemoryTotalMb: Long = 0
+
     // Resource monitoring
     private val resourceHistory = ConcurrentLinkedQueue<ResourceSnapshot>()
 
     fun start() {
         startTime.set(System.currentTimeMillis())
 
-        // CPU/Memory sampling (every 1s)
+        // CPU/Memory/GPU sampling (every 1s)
         cpuSamplingTimer = fixedRateTimer("cpu-sampler", daemon = true, period = 1000) {
             val cpuUsage = osBean.processCpuLoad * 100
             val memoryUsed = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
+
+            // GPU sampling (Mac Apple Silicon - ioreg)
+            try {
+                val process = ProcessBuilder("ioreg", "-r", "-d", "1", "-c", "IOAccelerator")
+                    .redirectErrorStream(true)
+                    .start()
+                val output = process.inputStream.bufferedReader().readText()
+                process.waitFor(500, TimeUnit.MILLISECONDS)
+
+                // Parse "Device Utilization %", "In use system memory", "Alloc system memory"
+                val gpuMatch = Regex("\"Device Utilization %\"=(\\d+)").find(output)
+                if (gpuMatch != null) latestGpuUsage = gpuMatch.groupValues[1].toDouble()
+
+                val memUsedMatch = Regex("\"In use system memory\"=(\\d+)[,}]").find(output)
+                if (memUsedMatch != null) {
+                    latestGpuMemoryUsedMb = memUsedMatch.groupValues[1].toLong() / (1024 * 1024)
+                }
+
+                val memTotalMatch = Regex("\"Alloc system memory\"=(\\d+)").find(output)
+                if (memTotalMatch != null) {
+                    latestGpuMemoryTotalMb = memTotalMatch.groupValues[1].toLong() / (1024 * 1024)
+                }
+            } catch (e: Exception) {
+                // GPU sampling 실패시 무시 (Linux/Windows)
+            }
 
             resourceHistory.add(ResourceSnapshot(
                 timestamp = System.currentTimeMillis(),
                 cpuUsagePercent = cpuUsage,
                 memoryUsedMb = memoryUsed.toInt(),
-                memoryUsagePercent = (memoryUsed / memoryTotal) * 100
+                memoryUsagePercent = (memoryUsed / memoryTotal) * 100,
+                gpuUsagePercent = latestGpuUsage,
+                gpuMemoryUsedMb = latestGpuMemoryUsedMb,
+                gpuMemoryTotalMb = latestGpuMemoryTotalMb
             ))
 
             updateStatus()
@@ -603,6 +638,9 @@ class ProgressMonitor(private val outputDir: File) {
             "resourceHistory" to resourceHistory.takeLast(100),
             "cpuUsagePercent" to latestCpuUsage,
             "memoryUsedMb" to latestMemoryUsed,
+            "gpuUsagePercent" to latestGpuUsage,
+            "gpuMemoryUsedMb" to latestGpuMemoryUsedMb,
+            "gpuMemoryTotalMb" to latestGpuMemoryTotalMb,
             "lastUpdated" to System.currentTimeMillis()
         )
 
@@ -613,31 +651,56 @@ class ProgressMonitor(private val outputDir: File) {
 
 #### Next.js Dashboard (`dashboard/`)
 
-**SystemMonitor.tsx** - CPU/Memory Charts
+**SystemMonitor.tsx** - CPU/Memory/GPU Charts
 ```typescript
-export default function SystemMonitor({ resourceHistory }: Props) {
+export default function SystemMonitor({
+  cpuUsagePercent,
+  memoryUsedMb,
+  memoryTotalMb,
+  gpuUsagePercent,
+  gpuMemoryUsedMb,
+  gpuMemoryTotalMb,
+  resourceHistory
+}: Props) {
   return (
-    <div className="grid grid-cols-2 gap-4">
-      {/* CPU Chart */}
+    <div className="grid grid-cols-4 gap-4">
+      {/* CPU Gauge */}
       <div className="bg-slate-800 rounded-lg p-4">
-        <h3>CPU Usage</h3>
-        <LineChart data={resourceHistory}>
-          <Line dataKey="cpuUsagePercent" stroke="#00d9ff" />
-          <YAxis domain={[0, 100]} />
-        </LineChart>
+        <h3>CPU</h3>
+        <div className="text-3xl font-bold">{cpuUsagePercent.toFixed(1)}%</div>
       </div>
 
-      {/* Memory Chart */}
+      {/* Memory Gauge */}
       <div className="bg-slate-800 rounded-lg p-4">
-        <h3>Memory Usage</h3>
+        <h3>Memory</h3>
+        <div className="text-xl">{memoryUsedMb}MB / {memoryTotalMb}MB</div>
+      </div>
+
+      {/* GPU Gauge */}
+      <div className="bg-slate-800 rounded-lg p-4">
+        <h3>GPU</h3>
+        <div className="text-3xl font-bold">{gpuUsagePercent.toFixed(0)}%</div>
+        <div className="text-sm">{gpuMemoryUsedMb}MB / {gpuMemoryTotalMb}MB</div>
+      </div>
+
+      {/* History Chart */}
+      <div className="bg-slate-800 rounded-lg p-4 col-span-4">
         <LineChart data={resourceHistory}>
-          <Line dataKey="memoryUsedMb" stroke="#00ff88" />
+          <Line dataKey="cpuUsagePercent" stroke="#00d9ff" name="CPU" />
+          <Line dataKey="gpuUsagePercent" stroke="#ff6b6b" name="GPU" />
+          <YAxis domain={[0, 100]} />
         </LineChart>
       </div>
     </div>
   );
 }
 ```
+
+**Dashboard Features:**
+- **GPU Monitoring**: Real-time GPU usage & memory (Mac Apple Silicon)
+- **Pause/Resume**: Recent Renames flickering prevention
+- **Iteration Badge**: Shows current iteration number
+- **Auto Port Selection**: 4000 default, auto-fallback to 4001-4009
 
 **WorkflowGraph.tsx** - Pipeline Visualization
 ```typescript
@@ -744,14 +807,19 @@ export ANTHROPIC_API_KEY=sk-ant-xxxxx
 
 **Terminal 2: Start Next.js dashboard**
 ```bash
+# Option 1: Use auto port selection script (Recommended)
 cd dashboard
-npm run dev
+./start-dashboard.sh
+
+# Option 2: Manual start with specific port
+cd dashboard
+PORT=4000 npm run dev
 ```
 
 **Access Dashboard:**
-- Open browser: http://localhost:3000
+- Open browser: http://localhost:4000
 - Real-time updates every 3 seconds
-- CPU/Memory graphs
+- CPU/Memory/GPU graphs
 - Pipeline visualization
 - Code diff viewer
 
@@ -845,10 +913,25 @@ npm start
 # Increase batch size for faster processing
 ./gradlew run --args="fix ./sources --ai --batch-size 20"
 
+# Use smaller model for faster inference
+./gradlew run --args="fix ./sources --ai --model deepseek-coder:6.7b"
+
+# Combine both for maximum speed (~10x faster)
+./gradlew run --args="fix ./sources --ai --model deepseek-coder:6.7b --batch-size 50"
+
 # Adjust worker count (internal config)
 # Edit MethodCallGraphBuilder.kt:
 val numWorkers = Runtime.getRuntime().availableProcessors()
 ```
+
+### Performance Comparison
+
+| Configuration | Speed | Memory | Use Case |
+|--------------|-------|--------|----------|
+| `deepseek-coder:33b --batch-size 10` | 1x (baseline) | 20GB | Highest quality |
+| `deepseek-coder:33b --batch-size 30` | 2-3x | 20GB | Balanced |
+| `deepseek-coder:6.7b --batch-size 50` | 5-10x | 6GB | **Recommended** |
+| `deepseek-coder:6.7b --batch-size 100` | 10x+ | 6GB | Maximum speed |
 
 ---
 
@@ -856,14 +939,18 @@ val numWorkers = Runtime.getRuntime().availableProcessors()
 
 ### Common Issues
 
-**1. Port 3000 already in use**
+**1. Port 4000 already in use**
 ```bash
-# Kill process on port 3000
-lsof -ti:3000 | xargs kill -9
+# Option 1: Kill process on port 4000
+lsof -ti:4000 | xargs kill -9
 
-# Or use different port
+# Option 2: Use auto port selection script (Recommended)
 cd dashboard
-PORT=3001 npm run dev
+./start-dashboard.sh  # Will try 4001, 4002... automatically
+
+# Option 3: Manually specify different port
+cd dashboard
+PORT=4001 npm run dev
 ```
 
 **2. Ollama connection refused**
@@ -1081,13 +1168,14 @@ cd ..
 
 ```bash
 # Start Next.js dashboard (Terminal 1)
-cd dashboard && npm run dev
+cd dashboard && ./start-dashboard.sh  # Auto port selection
+# OR: cd dashboard && PORT=4000 npm run dev  # Manual port
 
 # Run deobfuscation (Terminal 2)
 ./gradlew run --args="fix ./sources --ai"
 
 # Access dashboard
-# http://localhost:3000
+# http://localhost:4000 (or 4001, 4002... if port busy)
 ```
 
 ### Utility Commands
