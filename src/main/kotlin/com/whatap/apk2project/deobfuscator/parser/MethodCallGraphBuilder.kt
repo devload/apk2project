@@ -25,6 +25,19 @@ class MethodCallGraphBuilder {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val parser = JavaParser()
 
+    companion object {
+        // 병렬 처리 설정
+        const val MIN_WORKERS = 4  // 최소 워커 수
+        const val FILE_PARSE_CHUNK_SIZE = 100  // 파일 파싱 청크 크기
+        const val CALL_GRAPH_CHUNK_SIZE = 500  // 콜 그래프 빌딩 청크 크기
+
+        // 진행률 보고 주기
+        const val PROGRESS_REPORT_INTERVAL = 100  // 100개마다 진행률 보고
+
+        // 우선순위 후보 수
+        const val PRIORITY_CANDIDATE_LIMIT = 100  // 우선순위 3 후보 수 제한
+    }
+
     // 파싱된 클래스들
     val classes = ConcurrentHashMap<String, ClassNode>()
 
@@ -53,8 +66,8 @@ class MethodCallGraphBuilder {
         val processed = AtomicInteger(0)
 
         // 병렬 처리 (CPU 코어 수에 맞춰 워커 수 결정)
-        val numWorkers = Runtime.getRuntime().availableProcessors().coerceAtLeast(4)
-        val chunkSize = 100  // 각 배치당 100개 파일
+        val numWorkers = Runtime.getRuntime().availableProcessors().coerceAtLeast(MIN_WORKERS)
+        val chunkSize = FILE_PARSE_CHUNK_SIZE
 
         logger.info("Using $numWorkers parallel workers, chunk size: $chunkSize")
 
@@ -75,7 +88,7 @@ class MethodCallGraphBuilder {
                             if (current % 1000 == 0) {
                                 logger.info("Parsed $current/${javaFiles.size} files...")
                             }
-                            if (current % 100 == 0 || current == javaFiles.size) {
+                            if (current % PROGRESS_REPORT_INTERVAL == 0 || current == javaFiles.size) {
                                 progressCallback?.invoke(current, javaFiles.size)
                             }
                         }
@@ -212,7 +225,7 @@ class MethodCallGraphBuilder {
         logger.info("Using parallel processing for call graph building...")
 
         runBlocking {
-            val chunkSize = 500
+            val chunkSize = CALL_GRAPH_CHUNK_SIZE
             classValues.chunked(chunkSize).forEach { chunk ->
                 val jobs = chunk.map { classNode ->
                     async(Dispatchers.IO) {
@@ -254,7 +267,7 @@ class MethodCallGraphBuilder {
                             if (current % 1000 == 0) {
                                 logger.info("Building call graph: $current/$totalClasses classes...")
                             }
-                            if (current % 100 == 0 || current == totalClasses) {
+                            if (current % PROGRESS_REPORT_INTERVAL == 0 || current == totalClasses) {
                                 progressCallback?.invoke(current, totalClasses)
                             }
                         }
@@ -427,7 +440,7 @@ class MethodCallGraphBuilder {
         val priority3Candidates = withUnprocessedCount
             .filter { it.second == minUnprocessed }
             .map { it.first }
-            .take(100)
+            .take(PRIORITY_CANDIDATE_LIMIT)
 
         logger.info("[Priority 3] min dependencies=$minUnprocessed, candidates=${priority3Candidates.size}")
 
