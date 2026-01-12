@@ -93,6 +93,7 @@ class ProgressMonitor(
 
     // Pipeline config
     @Volatile var batchSize: Int = 10
+    @Volatile var koreanEnabled: Boolean = false
 
     init {
         outputDir.mkdirs()

@@ -291,6 +291,7 @@ class DeobfuscationPipeline(
 
         monitor.aiClientType = config.aiClientType.name
         monitor.batchSize = config.batchSize
+        monitor.koreanEnabled = config.enableKorean
 
         if (!aiClient.isAvailable()) {
             monitor.aiClientAvailable = false
