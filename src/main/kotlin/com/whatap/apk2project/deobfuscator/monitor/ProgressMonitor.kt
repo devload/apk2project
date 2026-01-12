@@ -1,6 +1,9 @@
 package com.whatap.apk2project.deobfuscator.monitor
 
 import com.google.gson.GsonBuilder
+import com.whatap.apk2project.deobfuscator.monitor.gpu.GpuSampler
+import com.whatap.apk2project.deobfuscator.monitor.gpu.GpuSamplerFactory
+import com.whatap.apk2project.deobfuscator.monitor.gpu.GpuInfo
 import java.io.File
 import java.lang.management.ManagementFactory
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -15,7 +18,8 @@ import kotlin.concurrent.fixedRateTimer
  * 진행 상황 모니터링 및 웹 대시보드 지원
  */
 class ProgressMonitor(
-    private val outputDir: File
+    private val outputDir: File,
+    private val gpuSampler: GpuSampler = GpuSamplerFactory.create()
 ) {
     private val gson = GsonBuilder().setPrettyPrinting().create()
     private val statusFile = File(outputDir, "status.json")
@@ -48,10 +52,8 @@ class ProgressMonitor(
     private val osBean = ManagementFactory.getOperatingSystemMXBean() as OperatingSystemMXBean
     private var cpuSamplingTimer: java.util.Timer? = null
 
-    // GPU 샘플링 (Mac Apple Silicon)
-    @Volatile private var latestGpuUsage: Double = 0.0
-    @Volatile private var latestGpuMemoryUsedMb: Long = 0
-    @Volatile private var latestGpuMemoryTotalMb: Long = 0
+    // GPU 샘플링 (GpuSampler 사용)
+    @Volatile private var latestGpuInfo: GpuInfo = GpuInfo(0.0, 0, 0)
 
     // 현재 상태
     @Volatile var currentPhase: PipelinePhase = PipelinePhase.INITIALIZING
@@ -112,35 +114,10 @@ class ProgressMonitor(
                     latestCpuUsage = cpu
                 }
 
-                // GPU 샘플링 (Mac Apple Silicon - ioreg 사용)
-                try {
-                    val process = ProcessBuilder("ioreg", "-r", "-d", "1", "-c", "IOAccelerator")
-                        .redirectErrorStream(true)
-                        .start()
-                    val output = process.inputStream.bufferedReader().readText()
-                    process.waitFor(500, TimeUnit.MILLISECONDS)
-
-                    // PerformanceStatistics에서 파싱 (ioreg JSON-like format)
-                    // "Device Utilization %"=98
-                    val gpuMatch = Regex("\"Device Utilization %\"=(\\d+)").find(output)
-                    if (gpuMatch != null) {
-                        latestGpuUsage = gpuMatch.groupValues[1].toDouble()
-                    }
-
-                    // "In use system memory"=20151549952 (NOT "In use system memory (driver)")
-                    // 정확한 키만 매칭하기 위해 뒤에 }나 ,가 오는 패턴 사용
-                    val memUsedMatch = Regex("\"In use system memory\"=(\\d+)[,}]").find(output)
-                    if (memUsedMatch != null) {
-                        latestGpuMemoryUsedMb = memUsedMatch.groupValues[1].toLong() / (1024 * 1024)
-                    }
-
-                    // "Alloc system memory"=37525897216
-                    val memTotalMatch = Regex("\"Alloc system memory\"=(\\d+)").find(output)
-                    if (memTotalMatch != null) {
-                        latestGpuMemoryTotalMb = memTotalMatch.groupValues[1].toLong() / (1024 * 1024)
-                    }
-                } catch (e: Exception) {
-                    // GPU 샘플링 실패시 무시 (Linux/Windows에서는 작동 안 함)
+                // GPU 샘플링 (GpuSampler 사용 - 플랫폼 독립적)
+                val gpuInfo = gpuSampler.getGpuInfo()
+                if (gpuInfo != null) {
+                    latestGpuInfo = gpuInfo
                 }
             } catch (e: Exception) {
                 // Ignore sampling errors
@@ -319,9 +296,9 @@ class ProgressMonitor(
             cpuUsagePercent = cpuUsage,
             memoryUsedMb = memoryUsed,
             memoryUsagePercent = memoryUsagePercent,
-            gpuUsagePercent = latestGpuUsage,
-            gpuMemoryUsedMb = latestGpuMemoryUsedMb,
-            gpuMemoryTotalMb = latestGpuMemoryTotalMb
+            gpuUsagePercent = latestGpuInfo.usagePercent,
+            gpuMemoryUsedMb = latestGpuInfo.memoryUsedMb,
+            gpuMemoryTotalMb = latestGpuInfo.memoryTotalMb
         ))
 
         // 최대 개수 유지
@@ -390,9 +367,9 @@ class ProgressMonitor(
             memoryUsedMb = memoryUsed,
             memoryTotalMb = memoryTotal,
             memoryUsagePercent = memoryUsagePercent,
-            gpuUsagePercent = latestGpuUsage,
-            gpuMemoryUsedMb = latestGpuMemoryUsedMb,
-            gpuMemoryTotalMb = latestGpuMemoryTotalMb,
+            gpuUsagePercent = latestGpuInfo.usagePercent,
+            gpuMemoryUsedMb = latestGpuInfo.memoryUsedMb,
+            gpuMemoryTotalMb = latestGpuInfo.memoryTotalMb,
             lastUpdated = System.currentTimeMillis()
         )
 
