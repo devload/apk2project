@@ -325,7 +325,7 @@ Example: {"name":"com.example.api","desc":"API layer for network operations","re
                 "stream" to false,
                 "options" to mapOf(
                     "temperature" to 0.1,  // 낮은 온도로 일관성 유지
-                    "num_predict" to 300,  // JSON 응답을 완성하기에 충분한 토큰
+                    "num_predict" to 2048,  // DeepSeek-R1 reasoning을 위한 충분한 토큰
                     "top_p" to 0.9
                     // stop 제거: JSON 파싱은 extractJson이 처리
                 )
