@@ -32,8 +32,8 @@ class ProgressMonitor(
     // 통계
     val totalClasses = AtomicInteger(0)
     val totalMethods = AtomicInteger(0)
-    val leafMethods = AtomicInteger(0)
-    val processedMethods = AtomicInteger(0)  // Phase 3: 메서드 처리
+    val leafMethods = AtomicInteger(0)  // 초기 leaf methods (고정, ITERATE 1에서 계산)
+    val iterationProcessedMethods = AtomicInteger(0)  // 현재 ITERATION에서 처리된 메서드
     val processedClasses = AtomicInteger(0)  // Phase 4: 클래스 처리
     val renamedMethods = AtomicInteger(0)
     val failedMethods = AtomicInteger(0)
@@ -232,7 +232,7 @@ class ProgressMonitor(
     }
 
     fun incrementProcessed() {
-        processedMethods.incrementAndGet()
+        iterationProcessedMethods.incrementAndGet()
         updateStatus()
     }
 
@@ -248,6 +248,7 @@ class ProgressMonitor(
 
     fun nextIteration() {
         currentIteration.incrementAndGet()
+        iterationProcessedMethods.set(0)  // ITERATION 시작 시 카운터 리셋
         updateStatus()
     }
 
@@ -277,8 +278,8 @@ class ProgressMonitor(
             System.currentTimeMillis() - startTime.get()
         } else 0
 
-        val processed = processedMethods.get()
-        val total = leafMethods.get()
+        val processed = iterationProcessedMethods.get()  // 현재 ITERATION에서 처리된 메서드
+        val total = leafMethods.get()  // 전체 leaf methods (고정)
         val remaining = (total - processed).coerceAtLeast(0)
 
         val progress = if (total > 0) {
@@ -356,7 +357,7 @@ class ProgressMonitor(
 
         // Phase 3 진행률 계산 (AI 분석 - 메서드)
         val phase3Prog = if (leafMethods.get() > 0) {
-            (processed.toDouble() / leafMethods.get() * 100).coerceAtMost(100.0)
+            (iterationProcessedMethods.get().toDouble() / leafMethods.get() * 100).coerceAtMost(100.0)
         } else 0.0
 
         // Phase 4 진행률 계산 (클래스 리네이밍)
@@ -374,7 +375,7 @@ class ProgressMonitor(
             totalClasses = totalClasses.get(),
             totalMethods = totalMethods.get(),
             leafMethods = leafMethods.get(),
-            processedMethods = processed,
+            processedMethods = iterationProcessedMethods.get(),
             renamedMethods = renamedMethods.get(),
             failedMethods = failedMethods.get(),
             currentIteration = currentIteration.get(),
