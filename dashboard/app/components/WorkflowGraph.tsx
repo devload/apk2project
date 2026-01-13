@@ -588,44 +588,24 @@ export default function WorkflowGraph({
         ),
       });
 
-      // Hidden queue nodes for edge compatibility (keep IDs but don't display)
+      // Hidden queue nodes for edge compatibility (only create if Qwen is enabled)
       // These are needed because the edge definitions reference these IDs
-      nodes.push({
-        id: 'deepseek-queue',
-        data: { label: '' },
-        position: { x: 1150, y: centerY },
-        style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
-      });
-      nodes.push({
-        id: 'qwen-queue',
-        data: { label: '' },
-        position: { x: 1370, y: centerY },
-        style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
-      });
-      nodes.push({
-        id: 'rename-queue',
-        data: { label: '' },
-        position: { x: 1590, y: centerY },
-        style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
-      });
-      nodes.push({
-        id: 'class-deepseek-queue',
-        data: { label: '' },
-        position: { x: 1810, y: centerY },
-        style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
-      });
-      nodes.push({
-        id: 'class-qwen-queue',
-        data: { label: '' },
-        position: { x: 1810, y: centerY },
-        style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
-      });
-      nodes.push({
-        id: 'class-rename-queue',
-        data: { label: '' },
-        position: { x: 1810, y: centerY },
-        style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
-      });
+      if (qwenQueueSize !== null) {
+        nodes.push({
+          id: 'qwen-queue',
+          data: { label: '' },
+          position: { x: 1370, y: centerY },
+          style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
+        });
+      }
+      if (classQwenQueueSize !== null) {
+        nodes.push({
+          id: 'class-qwen-queue',
+          data: { label: '' },
+          position: { x: 1810, y: centerY },
+          style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
+        });
+      }
     }
 
     return nodes;
