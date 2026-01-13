@@ -184,7 +184,7 @@ export default function Dashboard() {
       </div>
 
       {/* Status Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <StatusCard
           title="Phase"
           value={status.phase}
@@ -192,11 +192,18 @@ export default function Dashboard() {
           icon="🔄"
         />
         <StatusCard
-          title="Progress"
+          title="Methods (P3)"
           value={`${status.processedMethods} / ${status.leafMethods}`}
-          subtitle={`${status.progress.toFixed(1)}%`}
-          icon="📊"
-          progress={status.progress}
+          subtitle={`${status.phase3Progress.toFixed(1)}%`}
+          icon="🎯"
+          progress={status.phase3Progress}
+        />
+        <StatusCard
+          title="Classes (P4)"
+          value={status.totalClasses.toString()}
+          subtitle={`${status.phase4Progress.toFixed(1)}%`}
+          icon="🏗️"
+          progress={status.phase4Progress}
         />
         <StatusCard
           title="Renamed"
@@ -211,6 +218,60 @@ export default function Dashboard() {
           icon="⏱️"
         />
       </div>
+
+      {/* Phase Progress Detail */}
+      {(status.phase3Progress > 0 || status.phase4Progress > 0) && (
+        <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 mb-8 border border-purple-500/20">
+          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <span>📊</span> Phase Progress Detail
+          </h2>
+          <div className="grid grid-cols-2 gap-6">
+            {/* Phase 3: Method Deobfuscation */}
+            <div className="bg-slate-900/50 rounded-lg p-4 border border-cyan-500/20">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-400">Phase 3: Methods</span>
+                <span className="text-xs bg-cyan-600/30 px-2 py-0.5 rounded text-cyan-300">
+                  Iteration {status.currentIteration}
+                </span>
+              </div>
+              <div className="text-2xl font-bold mb-1">
+                {status.processedMethods} / {status.leafMethods}
+              </div>
+              <div className="w-full bg-slate-700 rounded-full h-2 mb-2">
+                <div
+                  className="bg-gradient-to-r from-cyan-400 to-purple-400 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(status.phase3Progress, 100)}%` }}
+                ></div>
+              </div>
+              <div className="text-sm text-gray-400">
+                {status.phase3Progress.toFixed(1)}% • {status.failedMethods} failed
+              </div>
+            </div>
+
+            {/* Phase 4: Class Deobfuscation */}
+            <div className="bg-slate-900/50 rounded-lg p-4 border border-orange-500/20">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-400">Phase 4: Classes</span>
+                <span className="text-xs bg-orange-600/30 px-2 py-0.5 rounded text-orange-300">
+                  {status.currentPhase.includes('PHASE4_CLASSES') ? 'Processing' : 'Waiting'}
+                </span>
+              </div>
+              <div className="text-2xl font-bold mb-1">
+                {status.totalClasses.toLocaleString()} classes
+              </div>
+              <div className="w-full bg-slate-700 rounded-full h-2 mb-2">
+                <div
+                  className="bg-gradient-to-r from-orange-400 to-red-400 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(status.phase4Progress, 100)}%` }}
+                ></div>
+              </div>
+              <div className="text-sm text-gray-400">
+                {status.phase4Progress.toFixed(1)}% complete
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Workflow Visualization */}
       <div className="mb-8">
@@ -263,6 +324,24 @@ export default function Dashboard() {
             <StatItem label="Parsed Files" value={status.parsedFiles} />
             <StatItem label="Total Classes" value={status.totalClasses} />
             <StatItem label="Call Graph Edges" value={status.callGraphEdges} />
+          </div>
+        </div>
+      )}
+
+      {/* Failed Requests */}
+      {status.recentLlmRequests && status.recentLlmRequests.some(r => !r.success) && (
+        <div className="bg-red-900/20 backdrop-blur-sm rounded-lg p-6 mb-8 border border-red-500/20">
+          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <span>❌</span> Failed Requests ({status.recentLlmRequests.filter(r => !r.success).length})
+          </h2>
+          <div className="space-y-3">
+            {status.recentLlmRequests
+              .filter(r => !r.success)
+              .slice()
+              .reverse()
+              .map((request, index) => (
+                <FailedRequestCard key={index} request={request} />
+              ))}
           </div>
         </div>
       )}
@@ -359,6 +438,81 @@ function StatusCard({ title, value, subtitle, icon, progress }: {
             className="bg-gradient-to-r from-cyan-400 to-purple-400 h-full transition-all duration-500"
             style={{ width: `${Math.min(progress, 100)}%` }}
           ></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FailedRequestCard({ request }: { request: LlmRequestEntry }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  return (
+    <div className="bg-red-900/10 rounded-lg p-4 border border-red-600/30 hover:border-red-500/50 transition-all">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-2 cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-lg">❌</span>
+            <span className="font-mono text-sm text-red-300">{request.methodName}</span>
+            <span className="text-xs bg-red-600/30 px-2 py-0.5 rounded text-red-300">
+              {request.requestType}
+            </span>
+            <span className="text-xs text-gray-500">
+              {new Date(request.timestamp).toLocaleTimeString()}
+            </span>
+          </div>
+          <div className="text-xs text-gray-400">
+            Model: {request.model} • Duration: {(request.durationMs / 1000).toFixed(1)}s
+          </div>
+        </div>
+        <button className="text-gray-400 hover:text-white ml-2">
+          {isExpanded ? '▲' : '▼'}
+        </button>
+      </div>
+
+      {/* Expanded Details */}
+      {isExpanded && (
+        <div className="mt-3 space-y-3">
+          {/* Prompt Preview */}
+          {request.promptPreview && (
+            <div className="bg-slate-900/50 rounded px-3 py-2 border border-slate-700/30">
+              <div className="text-xs text-gray-400 mb-1">📝 Prompt Preview:</div>
+              <div className="text-xs text-gray-300 font-mono whitespace-pre-wrap break-all">
+                {request.promptPreview.length > 500
+                  ? request.promptPreview.substring(0, 500) + '...'
+                  : request.promptPreview}
+              </div>
+            </div>
+          )}
+
+          {/* Error Response */}
+          {request.response && (
+            <div className="bg-red-900/20 rounded px-3 py-2 border border-red-800/30">
+              <div className="text-xs text-red-400 mb-1">⚠️ Error Response:</div>
+              <div className="text-xs text-red-200 whitespace-pre-wrap break-all">
+                {request.response.length > 1000
+                  ? request.response.substring(0, 1000) + '...\n\n(Response truncated)'
+                  : request.response}
+              </div>
+            </div>
+          )}
+
+          {/* Request Info */}
+          <div className="grid grid-cols-3 gap-2 text-xs">
+            <div className="bg-slate-800/50 rounded px-2 py-1">
+              <span className="text-gray-500">Type:</span>
+              <span className="ml-1 text-gray-300">{request.requestType}</span>
+            </div>
+            <div className="bg-slate-800/50 rounded px-2 py-1">
+              <span className="text-gray-500">Model:</span>
+              <span className="ml-1 text-gray-300">{request.model}</span>
+            </div>
+            <div className="bg-slate-800/50 rounded px-2 py-1">
+              <span className="text-gray-500">Duration:</span>
+              <span className="ml-1 text-gray-300">{(request.durationMs / 1000).toFixed(2)}s</span>
+            </div>
+          </div>
         </div>
       )}
     </div>
