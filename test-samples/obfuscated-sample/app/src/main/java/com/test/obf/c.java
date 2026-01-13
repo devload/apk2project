@@ -43,12 +43,12 @@ public class c {
             @Override
             public void run() {
                 try {
-                    String g = b(path, "GET");
+                    String g = executeRequest(path, "GET");
                     if (callback != null) {
                         callback.a(g);
                     }
                 } catch (Exception e) {
-                    callback.b(e.getMessage());
+                    callback.executeRequest(e.getMessage());
                 }
             }
         });
@@ -61,60 +61,62 @@ public class c {
             @Override
             public void run() {
                 try {
-                    String g = h(path, body, "POST");
+                    String g = executeHttpRequestWithBody(path, body, "POST");
                     if (callback != null) {
                         callback.a(g);
                     }
                 } catch (Exception e) {
-                    callback.b(e.getMessage());
+                    callback.executeRequest(e.getMessage());
                 }
             }
         });
     }
 
-    private String b(String path, String method) throws Exception {
+    // [Deobfuscated] b -> executeRequest * Executes an HTTP request and returns the response as a string if the status code is 200, otherwise throws an exception.
+    private String executeRequest(String requestPath, String httpMethod) throws Exception {
         // executeRequest
-        URL url = new URL(e + path);
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.setRequestMethod(method);
-        conn.setConnectTimeout(f);
-        conn.setReadTimeout(f);
-        int i = conn.getResponseCode();
-        if (i == 200) {
-            BufferedReader j = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-            StringBuilder k = new StringBuilder();
-            String l;
-            while ((l = j.readLine()) != null) {
-                k.append(l);
+        URL requestURL = new URL(e + requestPath);
+        HttpURLConnection connection = (HttpURLConnection) requestURL.openConnection();
+        connection.setRequestMethod(httpMethod);
+        connection.setConnectTimeout(f);
+        connection.setReadTimeout(f);
+        int responseCode = connection.getResponseCode();
+        if (responseCode == 200) {
+            BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+            StringBuilder stringBuilder = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                stringBuilder.append(line);
             }
-            j.close();
-            return k.toString();
+            reader.close();
+            return stringBuilder.toString();
         } else {
-            throw new Exception("HTTP " + i);
+            throw new Exception("HTTP " + responseCode);
         }
     }
 
-    private String h(String path, String body, String method) throws Exception {
+    // [Deobfuscated] h -> executeHttpRequestWithBody * Executes an HTTP request with a body and returns the response as a string if successful, otherwise throws an exception.
+    private String executeHttpRequestWithBody(String apiPath, String requestBody, String httpMethod) throws Exception {
         // executeWithBody
-        URL url = new URL(e + path);
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.setRequestMethod(method);
-        conn.setConnectTimeout(f);
-        conn.setReadTimeout(f);
-        conn.setDoOutput(true);
-        conn.getOutputStream().write(body.getBytes());
-        int i = conn.getResponseCode();
-        if (i == 200) {
-            BufferedReader j = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-            StringBuilder k = new StringBuilder();
-            String l;
-            while ((l = j.readLine()) != null) {
-                k.append(l);
+        URL targetUrl = new URL(e + apiPath);
+        HttpURLConnection connection = (HttpURLConnection) targetUrl.openConnection();
+        connection.setRequestMethod(httpMethod);
+        connection.setConnectTimeout(f);
+        connection.setReadTimeout(f);
+        connection.setDoOutput(true);
+        connection.getOutputStream().write(requestBody.getBytes());
+        int responseCode = connection.getResponseCode();
+        if (responseCode == 200) {
+            BufferedReader inputReader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+            StringBuilder stringBuilder = new StringBuilder();
+            String line;
+            while ((line = inputReader.readLine()) != null) {
+                stringBuilder.append(line);
             }
-            j.close();
-            return k.toString();
+            inputReader.close();
+            return stringBuilder.toString();
         } else {
-            throw new Exception("HTTP " + i);
+            throw new Exception("HTTP " + responseCode);
         }
     }
 

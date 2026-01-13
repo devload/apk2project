@@ -91,12 +91,13 @@ public class d {
         return inputString == null || inputString.trim().isEmpty();
     }
 
-    public static String h(String str) {
+    // [Deobfuscated] h -> sanitizeInputString * removes certain characters from the input string
+    public static String sanitizeInputString(String inputString) {
         // sanitize
-        if (isEmptyOrBlank(str)) {
+        if (isEmptyOrBlank(inputString)) {
             return "";
         }
-        return str.replaceAll("[<>\"']", "");
+        return inputString.replaceAll("[<>\"']", "");
     }
 
     // [Deobfuscated] i -> parseInteger * Attempts to parse a string into an integer. If the parsing fails, it returns 0.

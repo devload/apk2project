@@ -1,5 +1,6 @@
 package com.test.obf;
 
+import android.util.Log;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -49,7 +50,7 @@ public class b {
             c.putAll(preferencesMap);
         }
         // loadFromDatabase()
-        Map<String, String> databaseSettingsMap = f.l();
+        Map<String, String> databaseSettingsMap = f.loadPreferencesFromDatabase();
         if (databaseSettingsMap != null) {
             c.putAll(databaseSettingsMap);
         }
@@ -65,13 +66,14 @@ public class b {
         return userDataMap;
     }
 
-    public void a(String key, String value) {
+    // [Deobfuscated] a -> saveDataToStorageAndDatabase * Saves data to different storage and database systems
+    public void saveDataToStorageAndDatabase(String dataKey, String dataValue) {
         // saveData
-        c.put(key, value);
+        c.put(dataKey, dataValue);
         // savePreference
-        g.savePreference(key, value);
+        g.savePreference(dataKey, dataValue);
         // saveToDatabase
-        f.saveToDatabase(key, value);
+        f.saveToDatabase(dataKey, dataValue);
     }
 
     // [Deobfuscated] c -> logEvent * Logs an event with a timestamp and action name
@@ -88,7 +90,8 @@ public class b {
         return c.get(dataKey);
     }
 
-    public void f() {
+    // [Deobfuscated] f -> clearCacheAndPreferences * clears cache and preferences
+    public void clearCacheAndPreferences() {
         // clearCache
         c.clear();
         // clearPreferences

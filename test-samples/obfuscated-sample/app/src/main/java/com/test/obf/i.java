@@ -19,7 +19,8 @@ public class i {
         j = new ArrayList<>();
     }
 
-    public static i i() {
+    // [Deobfuscated] i -> getInstance * Returns an instance of the class if it doesn't exist, otherwise returns the existing one.
+    public static i getInstance() {
         if (i == null) {
             i = new i();
         }
@@ -100,19 +101,21 @@ public class i {
         return false;
     }
 
-    private boolean d(String password) {
+    // [Deobfuscated] d -> containsDigit * checks if a string contains at least one digit
+    private boolean containsDigit(String inputPassword) {
         // hasDigit
-        for (char k : password.toCharArray()) {
-            if (Character.isDigit(k)) {
+        for (char currentChar : inputPassword.toCharArray()) {
+            if (Character.isDigit(currentChar)) {
                 return true;
             }
         }
         return false;
     }
 
-    private boolean e(String username) {
+    // [Deobfuscated] e -> isValidUsername * checks if the provided username is valid according to a specific pattern
+    private boolean isValidUsername(String userName) {
         // isValidUsername
-        return Pattern.compile("^[a-zA-Z0-9_]+$").matcher(username).matches();
+        return Pattern.compile("^[a-zA-Z0-9_]+$").matcher(userName).matches();
     }
 
     // [Deobfuscated] f -> getErrors * Returns a list of errors from the object 'j'
@@ -121,7 +124,8 @@ public class i {
         return new ArrayList<>(j);
     }
 
-    public String g() {
+    // [Deobfuscated] g -> getErrorMessage * Joins the elements of an array into a single string with comma as separator
+    public String getErrorMessage() {
         // getErrorMessage
         return String.join(", ", j);
     }

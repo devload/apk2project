@@ -38,25 +38,26 @@ public class e {
         return e;
     }
 
-    public boolean a(String username, String password) {
+    // [Deobfuscated] a -> authenticateUser * Authenticates a user with the given username and password
+    public boolean authenticateUser(String userName, String passWord) {
         // login
-        if (!d.parseInteger(username)) {
+        if (!d.parseInteger(userName)) {
             return false;
         }
-        String h = b.getData("hashed_pwd");
+        String hashedPasswordFromDB = b.getData("hashed_pwd");
         // md5
-        String i = d.md5HashGenerator(password);
-        Map<String, String> j = new HashMap<>();
-        j.put("username", username);
-        j.put("password", i);
-        c.getInstanceOrCreate("/auth/login", j.toString(), new d.i() {
+        String md5HashedPassword = d.md5HashGenerator(passWord);
+        Map<String, String> requestBodyMap = new HashMap<>();
+        requestBodyMap.put("username", userName);
+        requestBodyMap.put("password", md5HashedPassword);
+        c.getInstanceOrCreate("/auth/login", requestBodyMap.toString(), new d.i() {
 
             @Override
             public void a(String response) {
                 // onSuccess
                 f = parseJsonKey(response, "token");
-                long l = d.parseLongOrZero(parseJsonKey(response, "expires_in"));
-                g = System.currentTimeMillis() + l * 1000;
+                long expiryTimeInSeconds = d.parseLongOrZero(parseJsonKey(response, "expires_in"));
+                g = System.currentTimeMillis() + expiryTimeInSeconds * 1000;
                 b.md5HashGenerator("auth_token", f);
             }
 
@@ -75,10 +76,11 @@ public class e {
         f = null;
         g = 0;
         // clearCache
-        b.f();
+        b.clearCacheAndPreferences();
     }
 
-    public String c() {
+    // [Deobfuscated] c -> getAuthToken * Retrieves and manages the authentication token
+    public String getAuthToken() {
         // getToken
         if (f == null) {
             f = b.getData("auth_token");
@@ -91,7 +93,8 @@ public class e {
         return f;
     }
 
-    public boolean d() {
+    // [Deobfuscated] d -> isAuthenticated * checks if the instance exists and is not null
+    public boolean isAuthenticated() {
         // isAuthenticated
         return getInstanceOrCreate() != null;
     }

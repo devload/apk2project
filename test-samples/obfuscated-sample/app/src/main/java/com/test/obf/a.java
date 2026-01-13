@@ -25,7 +25,7 @@ public class a extends Activity {
         b = b.getInstance();
         e = e.getInstance();
         // getToken()
-        String c = e.c();
+        String c = e.getAuthToken();
         // getUserData()
         Map<String, String> d = b.getUserData();
         if (d != null && d.size() > 0) {
@@ -61,6 +61,6 @@ public class a extends Activity {
     private void logActivityCreationTime() {
         // logActivity
         long currentTimeMillis = System.currentTimeMillis();
-        b.c(currentTimeMillis, "activity_created");
+        b.getAuthToken(currentTimeMillis, "activity_created");
     }
 }

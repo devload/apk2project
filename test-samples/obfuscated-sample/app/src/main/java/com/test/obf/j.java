@@ -26,7 +26,8 @@ public class j {
         k = "https://api.example.com/v1";
     }
 
-    public static j j() {
+    // [Deobfuscated] j -> getInstanceOrCreate * Returns an instance of the class 'j' or creates a new one if it doesn't exist yet.
+    public static j getInstanceOrCreate() {
         if (j == null) {
             j = new j();
         }
@@ -111,27 +112,28 @@ public class j {
         });
     }
 
-    public void d(String notificationId, d.i callback) {
+    // [Deobfuscated] d -> markNotificationAsRead * Marks a notification as read if the user is authenticated
+    public void markNotificationAsRead(String notificationId, d.i responseCallback) {
         // markNotificationRead
         // getToken()
-        String l = e.getInstanceOrCreate();
-        if (l == null) {
-            callback.base64Encode("Not authenticated");
+        String token = e.getInstanceOrCreate();
+        if (token == null) {
+            responseCallback.base64Encode("Not authenticated");
             return;
         }
-        String m = "/notifications/" + notificationId + "/read";
-        c.getInstanceOrCreate(m, "", new d.i() {
+        String notificationPath = "/notifications/" + notificationId + "/read";
+        c.getInstanceOrCreate(notificationPath, "", new d.i() {
 
             @Override
             public void a(String response) {
                 // onSuccess
-                callback.a(response);
+                responseCallback.a(response);
             }
 
             @Override
             public void b(String error) {
                 // onError
-                callback.base64Encode(error);
+                responseCallback.base64Encode(error);
             }
         });
     }
@@ -161,19 +163,20 @@ public class j {
         });
     }
 
-    private String b(String json, String key) {
+    // [Deobfuscated] b -> extractJsonValueByKey * Extracts the value associated with a specific key in a JSON string
+    private String extractJsonValueByKey(String json, String key) {
         // parseJsonKey
-        String n = "\"" + key + "\":\"";
-        int o = json.indexOf(n);
-        if (o < 0) {
+        String jsonKeyWithQuotes = "\"" + key + "\":\"";
+        int indexOfJsonKeyStart = json.indexOf(jsonKeyWithQuotes);
+        if (indexOfJsonKeyStart < 0) {
             return null;
         }
-        int p = o + n.length();
-        int q = json.indexOf("\"", p);
-        if (q < 0) {
+        int startIndexOfValue = indexOfJsonKeyStart + jsonKeyWithQuotes.length();
+        int endIndexOfValue = json.indexOf("\"", startIndexOfValue);
+        if (endIndexOfValue < 0) {
             return null;
         }
-        return json.substring(p, q);
+        return json.substring(startIndexOfValue, endIndexOfValue);
     }
 
     public void f(String username, String email, String password, d.i callback) {

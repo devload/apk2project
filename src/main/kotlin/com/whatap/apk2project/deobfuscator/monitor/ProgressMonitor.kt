@@ -80,15 +80,16 @@ class ProgressMonitor(
 
     // Phase 3 Pipeline queue sizes (메소드 리네이밍)
     @Volatile var deepseekQueueSize: Int = 0
-    @Volatile var qwenQueueSize: Int = 0
+    @Volatile var qwenQueueSize: Int? = null  // null이면 해당 스테이지 비활성
     @Volatile var renameQueueSize: Int = 0
+    @Volatile var pipelineStages: List<String> = emptyList()  // 실제 파이프라인 스테이지
 
     // Phase 4: 클래스 리네이밍
     @Volatile var phase4Progress: Double = 0.0  // 0-100
 
     // Phase 4 Pipeline queue sizes (클래스 리네이밍)
     @Volatile var classDeepseekQueueSize: Int = 0
-    @Volatile var classQwenQueueSize: Int = 0
+    @Volatile var classQwenQueueSize: Int? = null  // null이면 해당 스테이지 비활성
     @Volatile var classRenameQueueSize: Int = 0
 
     // Pipeline config
@@ -356,6 +357,7 @@ class ProgressMonitor(
             deepseekQueueSize = deepseekQueueSize,
             qwenQueueSize = qwenQueueSize,
             renameQueueSize = renameQueueSize,
+            pipelineStages = pipelineStages,
             phase4Progress = phase4Progress,
             classDeepseekQueueSize = classDeepseekQueueSize,
             classQwenQueueSize = classQwenQueueSize,
@@ -489,13 +491,14 @@ data class ProgressStatus(
     val phase3Progress: Double,  // 0-100
     // Phase 3 Pipeline queues (메소드 리네이밍)
     val deepseekQueueSize: Int,
-    val qwenQueueSize: Int,
+    val qwenQueueSize: Int?,  // null이면 해당 스테이지 비활성
     val renameQueueSize: Int,
+    val pipelineStages: List<String>,  // 실제 파이프라인 스테이지
     // Phase 4: 클래스 리네이밍
     val phase4Progress: Double,  // 0-100
     // Phase 4 Pipeline queues (클래스 리네이밍)
     val classDeepseekQueueSize: Int,
-    val classQwenQueueSize: Int,
+    val classQwenQueueSize: Int?,  // null이면 해당 스테이지 비활성
     val classRenameQueueSize: Int,
     // Pipeline config
     val batchSize: Int,

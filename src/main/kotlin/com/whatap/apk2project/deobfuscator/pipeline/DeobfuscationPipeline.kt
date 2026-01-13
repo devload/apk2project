@@ -394,6 +394,15 @@ class DeobfuscationPipeline(
         val deepseekQueueCounter = AtomicInteger(0)
         val renameQueueCounter = AtomicInteger(0)
 
+        // 파이프라인 구조에 따라 monitor 설정
+        if (config.enableKorean) {
+            monitor.qwenQueueSize = 0
+            monitor.pipelineStages = listOf("DeepSeek", "Translation (Qwen)", "Rename")
+        } else {
+            monitor.qwenQueueSize = null
+            monitor.pipelineStages = listOf("DeepSeek", "Rename")
+        }
+
         // 한글 번역 여부에 따라 파이프라인 구조 결정
         if (config.enableKorean) {
             // 한글 번역 사용: DeepSeek → Translation → Rename
@@ -1075,6 +1084,13 @@ class DeobfuscationPipeline(
      * 클래스 리네이밍 큐 파이프라인 (Phase 4)
      */
     private suspend fun runClassRenamePipeline(candidates: List<ClassRenameCandidate>) = coroutineScope {
+        // 파이프라인 구조에 따라 monitor 설정
+        if (config.enableKorean) {
+            monitor.classQwenQueueSize = 0
+        } else {
+            monitor.classQwenQueueSize = null
+        }
+
         val classDeepseekQueue = Channel<ClassRenameCandidate>(capacity = 100)
         val classQwenQueue = Channel<Triple<ClassRenameCandidate, String, String>>(capacity = 100)
         val classRenameQueue = Channel<Triple<ClassRenameCandidate, String, String>>(capacity = 100)

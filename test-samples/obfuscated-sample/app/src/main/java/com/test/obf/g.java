@@ -22,7 +22,8 @@ public class g {
         // For test, we use in-memory storage
     }
 
-    public static g g() {
+    // [Deobfuscated] g -> getInstanceOrCreate * Returns an instance of class g or creates a new one if it doesn't exist yet.
+    public static g getInstanceOrCreate() {
         if (g == null) {
             g = new g();
         }
@@ -50,7 +51,8 @@ public class g {
         return j.get(preferenceKey);
     }
 
-    public void c(String key) {
+    // [Deobfuscated] c -> getPreference * retrieves a preference value from a map using the provided key
+    public void getPreference(String key) {
         // removePreference
         j.remove(key);
     }

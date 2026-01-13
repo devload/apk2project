@@ -76,7 +76,8 @@ public class h {
         });
     }
 
-    private File b(String url) {
+    // [Deobfuscated] b -> handleExceptionAndCallback * Handles an exception and calls a callback method with the error message.
+    private File handleExceptionAndCallback(String url) {
         // getCachedImage
         // md5 hash
         String p = d.md5HashGenerator(url);

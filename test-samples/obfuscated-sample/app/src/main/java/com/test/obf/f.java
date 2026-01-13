@@ -27,7 +27,8 @@ public class f {
         }
     }
 
-    public static f f() {
+    // [Deobfuscated] f -> getOrCreateInstance * Gets or creates an instance of the class 'f' if it doesn't exist already.
+    public static f getOrCreateInstance() {
         if (f == null) {
             f = new f();
         }
@@ -47,22 +48,23 @@ public class f {
         }
     }
 
-    public Map<String, String> l() {
+    // [Deobfuscated] l -> loadPreferencesFromDatabase * Loads preferences from a database and stores them in a map
+    public Map<String, String> loadPreferencesFromDatabase() {
         // loadFromDatabase
-        Map<String, String> m = new HashMap<>();
+        Map<String, String> preferencesMap = new HashMap<>();
         try {
-            Statement n = g.createStatement();
-            String o = "SELECT key, value FROM preferences";
-            ResultSet p = n.executeQuery(o);
-            while (p.next()) {
-                m.put(p.getString("key"), p.getString("value"));
+            Statement statement = g.createStatement();
+            String queryString = "SELECT key, value FROM preferences";
+            ResultSet resultSet = statement.executeQuery(queryString);
+            while (resultSet.next()) {
+                preferencesMap.put(resultSet.getString("key"), resultSet.getString("value"));
             }
-            p.close();
-            n.close();
+            resultSet.close();
+            statement.close();
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return m;
+        return preferencesMap;
     }
 
     // [Deobfuscated] m -> saveToDatabase * Saves key-value pair to a database
