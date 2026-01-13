@@ -1,5 +1,6 @@
 package com.whatap.apk2project.deobfuscator.pipeline
 
+import com.whatap.apk2project.deobfuscator.cache.MethodSourceCache
 import com.whatap.apk2project.deobfuscator.client.AiClient
 import com.whatap.apk2project.deobfuscator.client.AiClientFactory
 import com.whatap.apk2project.deobfuscator.client.AiClientType
@@ -57,6 +58,12 @@ class DeobfuscationPipeline(
         )
     } else null
     private val renamer = SourceRenamer()
+
+    // 소스 코드 캐시 (디스크 기반, 메모리 절약)
+    private val sourceCache = MethodSourceCache(
+        cacheDir = File(outputDir, ".apk2project/cache"),
+        maxMemorySize = 100  // 메모리에 100개만 보관
+    )
 
     // 처리 상태
     private val processedMethods = ConcurrentHashMap.newKeySet<String>()
@@ -363,17 +370,23 @@ class DeobfuscationPipeline(
 
     /**
      * 큐 기반 파이프라인 실행 (한 iteration)
+     *
+     * 메모리 최적화: 소스 코드를 큐에 포함하지 않고 MethodNode만 전달
+     * - File Queue (MethodSourceCache) 사용으로 메모리 절약
+     * - 필요할 때만 디스크에서 로드
      */
     private suspend fun runPipelineIteration(leafMethods: List<MethodNode>): Int = coroutineScope {
-        // 3개의 큐 생성
-        val deepseekQueue = Channel<Pair<MethodNode, String>>(capacity = 100)
-        val qwenQueue = Channel<Triple<MethodNode, String, MethodAnalysisResult>>(capacity = 100)
-        val renameQueue = Channel<Triple<MethodNode, String, MethodAnalysisResult>>(capacity = 100)
+        // 큐 생성 (소스 코드 미포함 - 메모리 절약)
+        val queueCapacity = config.batchSize * 10  // 배치 사이즈에 따라 동적 조정
+        val deepseekQueue = Channel<MethodNode>(capacity = queueCapacity)
+        val qwenQueue = Channel<Pair<MethodNode, MethodAnalysisResult>>(capacity = queueCapacity)
+        val renameQueue = Channel<Pair<MethodNode, MethodAnalysisResult>>(capacity = queueCapacity)
 
         val successCount = AtomicInteger(0)
 
-        // 실패한 메소드를 재시도하기 위한 큐
-        val retryQueue = java.util.concurrent.ConcurrentLinkedQueue<Pair<MethodNode, String>>()
+        // 실패한 메소드를 재시도하기 위한 큐 (메모리 제한)
+        val maxRetryQueueSize = 500  // 최대 500개까지 재시도
+        val retryQueue = java.util.concurrent.ConcurrentLinkedQueue<MethodNode>()
         val retryCount = java.util.concurrent.ConcurrentHashMap<String, Int>()
         val maxRetries = 5  // 최대 재시도 횟수
 
@@ -385,28 +398,48 @@ class DeobfuscationPipeline(
         // DeepSeek Workers (config.batchSize개)
         val deepseekJobs = List(config.batchSize) {
             launch(Dispatchers.IO) {
-                for ((method, sourceCode) in deepseekQueue) {
+                for (method in deepseekQueue) {
                     deepseekQueueCounter.decrementAndGet()
                     monitor.deepseekQueueSize = deepseekQueueCounter.get()
 
                     try {
                         logger.debug("DeepSeek analyzing: ${method.methodName}")
+
+                        // 소스 코드 로드 (캐시 또는 파일에서)
+                        var sourceCode = sourceCache.getSource(method)
+                        if (sourceCode == null) {
+                            sourceCode = extractMethodSource(method)
+                            if (sourceCode != null) {
+                                sourceCache.putSource(method, sourceCode)
+                            }
+                        }
+
+                        if (sourceCode == null) {
+                            logger.warn("No source code for ${method.methodName}")
+                            processedMethods.add(method.id)
+                            monitor.incrementFailed()
+                            return@launch
+                        }
+
                         val analysis = aiClient.analyzeMethod(method, sourceCode)
 
                         if (analysis != null) {
-                            // Qwen 큐로 전달
+                            // 분석 결과 캐시에 저장
+                            sourceCache.putAnalysis(method, analysis)
+
+                            // Qwen 큐로 전달 (소스 코드 미포함)
                             qwenQueueCounter.incrementAndGet()
                             monitor.qwenQueueSize = qwenQueueCounter.get()
-                            qwenQueue.send(Triple(method, sourceCode, analysis))
+                            qwenQueue.send(method to analysis)
                         } else {
                             // 재시도 큐에 추가 (최대 횟수 체크)
                             val currentRetry = retryCount.getOrDefault(method.id, 0)
-                            if (currentRetry < maxRetries) {
+                            if (currentRetry < maxRetries && retryQueue.size < maxRetryQueueSize) {
                                 retryCount[method.id] = currentRetry + 1
-                                retryQueue.add(method to sourceCode)
+                                retryQueue.add(method)
                                 logger.debug("DeepSeek failed, queued for retry (${currentRetry + 1}/$maxRetries): ${method.methodName}")
                             } else {
-                                logger.warn("DeepSeek failed after $maxRetries retries: ${method.methodName}")
+                                logger.warn("DeepSeek failed after $maxRetries retries or queue full: ${method.methodName}")
                                 processedMethods.add(method.id)
                                 monitor.incrementFailed()
                             }
@@ -414,12 +447,12 @@ class DeobfuscationPipeline(
                     } catch (e: Exception) {
                         // 에러 발생 시에도 재시도
                         val currentRetry = retryCount.getOrDefault(method.id, 0)
-                        if (currentRetry < maxRetries) {
+                        if (currentRetry < maxRetries && retryQueue.size < maxRetryQueueSize) {
                             retryCount[method.id] = currentRetry + 1
-                            retryQueue.add(method to sourceCode)
+                            retryQueue.add(method)
                             logger.debug("DeepSeek error, queued for retry (${currentRetry + 1}/$maxRetries): ${method.methodName}: ${e.message}")
                         } else {
-                            logger.error("DeepSeek error after $maxRetries retries: ${method.methodName}: ${e.message}")
+                            logger.error("DeepSeek error after $maxRetries retries or queue full: ${method.methodName}: ${e.message}")
                             processedMethods.add(method.id)
                             monitor.incrementFailed()
                         }
@@ -432,7 +465,7 @@ class DeobfuscationPipeline(
         // Qwen Workers (config.batchSize개)
         val qwenJobs = List(config.batchSize) {
             launch(Dispatchers.IO) {
-                for ((method, sourceCode, analysis) in qwenQueue) {
+                for ((method, analysis) in qwenQueue) {
                     qwenQueueCounter.decrementAndGet()
                     monitor.qwenQueueSize = qwenQueueCounter.get()
 
@@ -444,10 +477,10 @@ class DeobfuscationPipeline(
                             analysis
                         }
 
-                        // Rename 큐로 전달
+                        // Rename 큐로 전달 (소스 코드 미포함)
                         renameQueueCounter.incrementAndGet()
                         monitor.renameQueueSize = renameQueueCounter.get()
-                        renameQueue.send(Triple(method, sourceCode, translatedAnalysis))
+                        renameQueue.send(method to translatedAnalysis)
                     } catch (e: Exception) {
                         logger.error("Qwen error for ${method.methodName}: ${e.message}")
                         processedMethods.add(method.id)
@@ -460,7 +493,7 @@ class DeobfuscationPipeline(
         // Rename Workers (config.batchSize개)
         val renameJobs = List(config.batchSize) {
             launch(Dispatchers.IO) {
-                for ((method, sourceCode, analysis) in renameQueue) {
+                for ((method, analysis) in renameQueue) {
                     renameQueueCounter.decrementAndGet()
                     monitor.renameQueueSize = renameQueueCounter.get()
 
@@ -468,6 +501,25 @@ class DeobfuscationPipeline(
                         logger.debug("Renaming: ${method.methodName}")
 
                         analysisResults[method.id] = analysis
+
+                        // 소스 코드 로드 (캐시 또는 파일에서)
+                        val cachedSourceCode = sourceCache.getSource(method)
+                        val sourceCode = if (cachedSourceCode != null) {
+                            cachedSourceCode
+                        } else {
+                            val extracted = extractMethodSource(method)
+                            if (extracted != null) {
+                                sourceCache.putSource(method, extracted)
+                            }
+                            extracted
+                        }
+
+                        if (sourceCode == null) {
+                            logger.warn("No source code for renaming ${method.methodName}")
+                            processedMethods.add(method.id)
+                            monitor.incrementFailed()
+                            return@launch
+                        }
 
                         // 리네이밍 적용
                         val result = renamer.renameMethod(method.file, method, analysis)
@@ -542,11 +594,14 @@ class DeobfuscationPipeline(
             for (method in leafMethods) {
                 if (method.id in processedMethods) continue
 
+                // 소스 코드 추출 및 캐싱
                 val sourceCode = extractMethodSource(method)
                 if (sourceCode != null) {
+                    sourceCache.putSource(method, sourceCode)
+
                     deepseekQueueCounter.incrementAndGet()
                     monitor.deepseekQueueSize = deepseekQueueCounter.get()
-                    deepseekQueue.send(method to sourceCode)
+                    deepseekQueue.send(method)  // 소스 코드 미포함, ID만 전달
                     sentCount++
                 } else {
                     logger.debug("No source code for ${method.id}")
@@ -578,27 +633,38 @@ class DeobfuscationPipeline(
         if (retryQueue.isNotEmpty()) {
             logger.info("Processing retry queue: ${retryQueue.size} methods")
 
-            // 새로운 채널 생성
-            val retryDeepseekQueue = Channel<Pair<MethodNode, String>>(capacity = 50)
-            val retryQwenQueue = Channel<Triple<MethodNode, String, MethodAnalysisResult>>(capacity = 50)
-            val retryRenameQueue = Channel<Triple<MethodNode, String, MethodAnalysisResult>>(capacity = 50)
+            // 새로운 채널 생성 (소스 코드 미포함)
+            val retryDeepseekQueue = Channel<MethodNode>(capacity = config.batchSize * 5)
+            val retryQwenQueue = Channel<Pair<MethodNode, MethodAnalysisResult>>(capacity = config.batchSize * 5)
+            val retryRenameQueue = Channel<Pair<MethodNode, MethodAnalysisResult>>(capacity = config.batchSize * 5)
 
             // 재시도 워커들
             val retryDeepseekJobs = List(config.batchSize / 2 + 1) {
                 launch(Dispatchers.IO) {
-                    for ((method, sourceCode) in retryDeepseekQueue) {
+                    for (method in retryDeepseekQueue) {
                         try {
                             delay(2000) // 재시도 시 더 긴 딜레이
+
+                            // 소스 코드 로드 (캐시에서)
+                            val sourceCode = sourceCache.getSource(method)
+                            if (sourceCode == null) {
+                                logger.warn("No cached source for retry ${method.methodName}")
+                                processedMethods.add(method.id)
+                                monitor.incrementFailed()
+                                return@launch
+                            }
+
                             val analysis = aiClient.analyzeMethod(method, sourceCode)
                             if (analysis != null) {
-                                retryQwenQueue.send(Triple(method, sourceCode, analysis))
+                                sourceCache.putAnalysis(method, analysis)
+                                retryQwenQueue.send(method to analysis)
                             } else {
                                 val currentRetry = retryCount.getOrDefault(method.id, 0)
-                                if (currentRetry < maxRetries) {
+                                if (currentRetry < maxRetries && retryQueue.size < maxRetryQueueSize) {
                                     retryCount[method.id] = currentRetry + 1
-                                    retryQueue.add(method to sourceCode)
+                                    retryQueue.add(method)
                                 } else {
-                                    logger.warn("Final fail after $maxRetries retries: ${method.methodName}")
+                                    logger.warn("Final fail after $maxRetries retries or queue full: ${method.methodName}")
                                     processedMethods.add(method.id)
                                     monitor.incrementFailed()
                                 }
@@ -613,10 +679,10 @@ class DeobfuscationPipeline(
 
             val retryQwenJobs = List(config.batchSize / 2 + 1) {
                 launch(Dispatchers.IO) {
-                    for ((method, sourceCode, analysis) in retryQwenQueue) {
+                    for ((method, analysis) in retryQwenQueue) {
                         try {
                             val translated = translationClient?.translate(analysis) ?: analysis
-                            retryRenameQueue.send(Triple(method, sourceCode, translated))
+                            retryRenameQueue.send(method to translated)
                         } catch (e: Exception) {
                             processedMethods.add(method.id)
                             monitor.incrementFailed()
@@ -627,8 +693,17 @@ class DeobfuscationPipeline(
 
             val retryRenameJobs = List(config.batchSize / 2 + 1) {
                 launch(Dispatchers.IO) {
-                    for ((method, sourceCode, analysis) in retryRenameQueue) {
+                    for ((method, analysis) in retryRenameQueue) {
                         try {
+                            // 소스 코드 로드 (캐시에서)
+                            val sourceCode = sourceCache.getSource(method)
+                            if (sourceCode == null) {
+                                logger.warn("No cached source for rename retry ${method.methodName}")
+                                processedMethods.add(method.id)
+                                monitor.incrementFailed()
+                                return@launch
+                            }
+
                             val result = renamer.renameMethod(method.file, method, analysis)
                             when (result) {
                                 is RenameResult.Success -> {
