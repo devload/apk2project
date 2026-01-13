@@ -395,8 +395,8 @@ class DeobfuscationPipeline(
         val qwenQueueCounter = AtomicInteger(0)
         val renameQueueCounter = AtomicInteger(0)
 
-        // DeepSeek Workers (추상화 적용)
-        val deepseekJobs = PipelineWorkers.launchDeepSeekWorkers(
+        // DeepSeek Workers (템플릿 메소드 패턴 적용)
+        val deepseekWorker = DeepSeekWorker(
             scope = this,
             workerCount = config.batchSize,
             queue = deepseekQueue,
@@ -410,16 +410,12 @@ class DeobfuscationPipeline(
             retryCount = retryCount,
             maxRetries = maxRetries,
             maxRetryQueueSize = maxRetryQueueSize,
-            processedMethods = processedMethods,
-            failureHandler = { method, reason ->
-                monitor.incrementFailed()
-                logger.warn("Analysis failed for ${method.methodName}: $reason")
-            },
             delayMs = config.requestDelay / config.batchSize
         )
+        val deepseekJobs = deepseekWorker.launch()
 
-        // Qwen Workers (추상화 적용)
-        val qwenJobs = PipelineWorkers.launchTranslationWorkers(
+        // Translation Workers (템플릿 메소드 패턴 적용)
+        val translationWorker = TranslationWorker(
             scope = this,
             workerCount = config.batchSize,
             queue = qwenQueue,
@@ -432,16 +428,12 @@ class DeobfuscationPipeline(
                 }
             },
             nextQueue = renameQueue,
-            nextQueueCounter = renameQueueCounter,
-            processedMethods = processedMethods,
-            failureHandler = { method, reason ->
-                monitor.incrementFailed()
-                logger.error("Translation error for ${method.methodName}: $reason")
-            }
+            nextQueueCounter = renameQueueCounter
         )
+        val qwenJobs = translationWorker.launch()
 
-        // Rename Workers (추상화 적용)
-        val renameJobs = PipelineWorkers.launchRenameWorkers(
+        // Rename Workers (템플릿 메소드 패턴 적용)
+        val renameWorker = RenameWorker(
             scope = this,
             workerCount = config.batchSize,
             queue = renameQueue,
@@ -450,7 +442,7 @@ class DeobfuscationPipeline(
             extractFunc = ::extractMethodSource,
             renameFunc = renamer::renameMethod,
             processedMethods = processedMethods,
-            successHandler = { method, analysis, sourceCode, result ->
+            onSuccessHandler = { method, analysis, sourceCode, result ->
                 logger.info("  ✓ ${method.methodName} → ${analysis.suggestedName}")
                 logger.info("    └─ ${analysis.description.take(60)}...")
                 stats.renamedMethods++
@@ -497,11 +489,12 @@ class DeobfuscationPipeline(
                 successCount.incrementAndGet()
                 monitor.incrementProcessed()
             },
-            failureHandler = { method, reason ->
+            onFailureHandler = { method, reason ->
                 logger.warn("  ✗ ${method.methodName}: $reason")
                 monitor.incrementFailed()
             }
         )
+        val renameJobs = renameWorker.launch()
 
         // Producer: Leaf method들을 DeepSeek 큐에 공급
         val producerJob = launch(Dispatchers.IO) {
