@@ -395,198 +395,113 @@ class DeobfuscationPipeline(
         val qwenQueueCounter = AtomicInteger(0)
         val renameQueueCounter = AtomicInteger(0)
 
-        // DeepSeek Workers (config.batchSize개)
-        val deepseekJobs = List(config.batchSize) {
-            launch(Dispatchers.IO) {
-                for (method in deepseekQueue) {
-                    deepseekQueueCounter.decrementAndGet()
-                    monitor.deepseekQueueSize = deepseekQueueCounter.get()
+        // DeepSeek Workers (추상화 적용)
+        val deepseekJobs = PipelineWorkers.launchDeepSeekWorkers(
+            scope = this,
+            workerCount = config.batchSize,
+            queue = deepseekQueue,
+            queueCounter = deepseekQueueCounter,
+            sourceCache = sourceCache,
+            extractFunc = ::extractMethodSource,
+            analyzeFunc = aiClient::analyzeMethod,
+            nextQueue = qwenQueue,
+            nextQueueCounter = qwenQueueCounter,
+            retryQueue = retryQueue,
+            retryCount = retryCount,
+            maxRetries = maxRetries,
+            maxRetryQueueSize = maxRetryQueueSize,
+            processedMethods = processedMethods,
+            failureHandler = { method, reason ->
+                monitor.incrementFailed()
+                logger.warn("Analysis failed for ${method.methodName}: $reason")
+            },
+            delayMs = config.requestDelay / config.batchSize
+        )
 
-                    try {
-                        logger.debug("DeepSeek analyzing: ${method.methodName}")
-
-                        // 소스 코드 로드 (캐시 또는 파일에서)
-                        var sourceCode = sourceCache.getSource(method)
-                        if (sourceCode == null) {
-                            sourceCode = extractMethodSource(method)
-                            if (sourceCode != null) {
-                                sourceCache.putSource(method, sourceCode)
-                            }
-                        }
-
-                        if (sourceCode == null) {
-                            logger.warn("No source code for ${method.methodName}")
-                            processedMethods.add(method.id)
-                            monitor.incrementFailed()
-                            return@launch
-                        }
-
-                        val analysis = aiClient.analyzeMethod(method, sourceCode)
-
-                        if (analysis != null) {
-                            // 분석 결과 캐시에 저장
-                            sourceCache.putAnalysis(method, analysis)
-
-                            // Qwen 큐로 전달 (소스 코드 미포함)
-                            qwenQueueCounter.incrementAndGet()
-                            monitor.qwenQueueSize = qwenQueueCounter.get()
-                            qwenQueue.send(method to analysis)
-                        } else {
-                            // 재시도 큐에 추가 (최대 횟수 체크)
-                            val currentRetry = retryCount.getOrDefault(method.id, 0)
-                            if (currentRetry < maxRetries && retryQueue.size < maxRetryQueueSize) {
-                                retryCount[method.id] = currentRetry + 1
-                                retryQueue.add(method)
-                                logger.debug("DeepSeek failed, queued for retry (${currentRetry + 1}/$maxRetries): ${method.methodName}")
-                            } else {
-                                logger.warn("DeepSeek failed after $maxRetries retries or queue full: ${method.methodName}")
-                                processedMethods.add(method.id)
-                                monitor.incrementFailed()
-                            }
-                        }
-                    } catch (e: Exception) {
-                        // 에러 발생 시에도 재시도
-                        val currentRetry = retryCount.getOrDefault(method.id, 0)
-                        if (currentRetry < maxRetries && retryQueue.size < maxRetryQueueSize) {
-                            retryCount[method.id] = currentRetry + 1
-                            retryQueue.add(method)
-                            logger.debug("DeepSeek error, queued for retry (${currentRetry + 1}/$maxRetries): ${method.methodName}: ${e.message}")
-                        } else {
-                            logger.error("DeepSeek error after $maxRetries retries or queue full: ${method.methodName}: ${e.message}")
-                            processedMethods.add(method.id)
-                            monitor.incrementFailed()
-                        }
-                    }
-                    delay(config.requestDelay / config.batchSize)
+        // Qwen Workers (추상화 적용)
+        val qwenJobs = PipelineWorkers.launchTranslationWorkers(
+            scope = this,
+            workerCount = config.batchSize,
+            queue = qwenQueue,
+            queueCounter = qwenQueueCounter,
+            translateFunc = { analysis ->
+                if (translationClient != null) {
+                    translationClient.translate(analysis)
+                } else {
+                    analysis
                 }
+            },
+            nextQueue = renameQueue,
+            nextQueueCounter = renameQueueCounter,
+            processedMethods = processedMethods,
+            failureHandler = { method, reason ->
+                monitor.incrementFailed()
+                logger.error("Translation error for ${method.methodName}: $reason")
             }
-        }
+        )
 
-        // Qwen Workers (config.batchSize개)
-        val qwenJobs = List(config.batchSize) {
-            launch(Dispatchers.IO) {
-                for ((method, analysis) in qwenQueue) {
-                    qwenQueueCounter.decrementAndGet()
-                    monitor.qwenQueueSize = qwenQueueCounter.get()
+        // Rename Workers (추상화 적용)
+        val renameJobs = PipelineWorkers.launchRenameWorkers(
+            scope = this,
+            workerCount = config.batchSize,
+            queue = renameQueue,
+            queueCounter = renameQueueCounter,
+            sourceCache = sourceCache,
+            extractFunc = ::extractMethodSource,
+            renameFunc = renamer::renameMethod,
+            processedMethods = processedMethods,
+            successHandler = { method, analysis, sourceCode, result ->
+                logger.info("  ✓ ${method.methodName} → ${analysis.suggestedName}")
+                logger.info("    └─ ${analysis.description.take(60)}...")
+                stats.renamedMethods++
 
-                    try {
-                        val translatedAnalysis = if (translationClient != null) {
-                            logger.debug("Qwen translating: ${method.methodName}")
-                            translationClient.translate(analysis)
-                        } else {
-                            analysis
-                        }
+                // 변경 전후 코드 생성
+                val sourceCodeBefore = sourceCode.lines().take(10).joinToString("\n")
 
-                        // Rename 큐로 전달 (소스 코드 미포함)
-                        renameQueueCounter.incrementAndGet()
-                        monitor.renameQueueSize = renameQueueCounter.get()
-                        renameQueue.send(method to translatedAnalysis)
-                    } catch (e: Exception) {
-                        logger.error("Qwen error for ${method.methodName}: ${e.message}")
-                        processedMethods.add(method.id)
-                        monitor.incrementFailed()
-                    }
+                // 참조 업데이트
+                val refUpdate = updateReferences(method, analysis.suggestedName)
+
+                // 실제 적용된 로컬 변수 리네임 사용 (AI 제안이 아닌 실제 적용된 것)
+                val actualLocalVarRenames = result.actualVariableRenames
+
+                // sourceCodeAfter에 메소드 이름 + 로컬 변수 리네임 모두 적용
+                var sourceCodeAfter = sourceCodeBefore.replace(
+                    "\\b${Regex.escape(method.methodName)}\\b".toRegex(),
+                    analysis.suggestedName
+                )
+                // 로컬 변수 리네임도 미리보기에 반영
+                actualLocalVarRenames.forEach { (oldName, newName) ->
+                    sourceCodeAfter = sourceCodeAfter.replace(
+                        "\\b${Regex.escape(oldName)}\\b".toRegex(),
+                        newName
+                    )
                 }
+
+                // 모니터에 리네임 기록
+                monitor.addRename(
+                    type = "METHOD",
+                    original = method.methodName,
+                    suggested = analysis.suggestedName,
+                    description = analysis.description,
+                    reasoning = analysis.reasoning,
+                    className = method.className,
+                    filePath = method.file.absolutePath,
+                    lineNumber = method.startLine,
+                    sourceCodeBefore = sourceCodeBefore,
+                    sourceCodeAfter = sourceCodeAfter,
+                    localVariableRenames = actualLocalVarRenames,
+                    referencesUpdated = refUpdate.count,
+                    updatedFiles = refUpdate.files
+                )
+
+                successCount.incrementAndGet()
+                monitor.incrementProcessed()
+            },
+            failureHandler = { method, reason ->
+                logger.warn("  ✗ ${method.methodName}: $reason")
+                monitor.incrementFailed()
             }
-        }
-
-        // Rename Workers (config.batchSize개)
-        val renameJobs = List(config.batchSize) {
-            launch(Dispatchers.IO) {
-                for ((method, analysis) in renameQueue) {
-                    renameQueueCounter.decrementAndGet()
-                    monitor.renameQueueSize = renameQueueCounter.get()
-
-                    try {
-                        logger.debug("Renaming: ${method.methodName}")
-
-                        analysisResults[method.id] = analysis
-
-                        // 소스 코드 로드 (캐시 또는 파일에서)
-                        val cachedSourceCode = sourceCache.getSource(method)
-                        val sourceCode = if (cachedSourceCode != null) {
-                            cachedSourceCode
-                        } else {
-                            val extracted = extractMethodSource(method)
-                            if (extracted != null) {
-                                sourceCache.putSource(method, extracted)
-                            }
-                            extracted
-                        }
-
-                        if (sourceCode == null) {
-                            logger.warn("No source code for renaming ${method.methodName}")
-                            processedMethods.add(method.id)
-                            monitor.incrementFailed()
-                            return@launch
-                        }
-
-                        // 리네이밍 적용
-                        val result = renamer.renameMethod(method.file, method, analysis)
-
-                        when (result) {
-                            is RenameResult.Success -> {
-                                logger.info("  ✓ ${method.methodName} → ${analysis.suggestedName}")
-                                logger.info("    └─ ${analysis.description.take(60)}...")
-                                stats.renamedMethods++
-
-                                // 변경 전후 코드 생성
-                                val sourceCodeBefore = sourceCode.lines().take(10).joinToString("\n")
-
-                                // 참조 업데이트
-                                val refUpdate = updateReferences(method, analysis.suggestedName)
-
-                                // 실제 적용된 로컬 변수 리네임 사용 (AI 제안이 아닌 실제 적용된 것)
-                                val actualLocalVarRenames = result.actualVariableRenames
-
-                                // sourceCodeAfter에 메소드 이름 + 로컬 변수 리네임 모두 적용
-                                var sourceCodeAfter = sourceCodeBefore.replace(
-                                    "\\b${Regex.escape(method.methodName)}\\b".toRegex(),
-                                    analysis.suggestedName
-                                )
-                                // 로컬 변수 리네임도 미리보기에 반영
-                                actualLocalVarRenames.forEach { (oldName, newName) ->
-                                    sourceCodeAfter = sourceCodeAfter.replace(
-                                        "\\b${Regex.escape(oldName)}\\b".toRegex(),
-                                        newName
-                                    )
-                                }
-
-                                // 모니터에 리네임 기록
-                                monitor.addRename(
-                                    type = "METHOD",
-                                    original = method.methodName,
-                                    suggested = analysis.suggestedName,
-                                    description = analysis.description,
-                                    reasoning = analysis.reasoning,
-                                    className = method.className,
-                                    filePath = method.file.absolutePath,
-                                    lineNumber = method.startLine,
-                                    sourceCodeBefore = sourceCodeBefore,
-                                    sourceCodeAfter = sourceCodeAfter,
-                                    localVariableRenames = actualLocalVarRenames,
-                                    referencesUpdated = refUpdate.count,
-                                    updatedFiles = refUpdate.files
-                                )
-
-                                successCount.incrementAndGet()
-                            }
-                            is RenameResult.Failure -> {
-                                logger.warn("  ✗ ${method.methodName}: ${result.reason}")
-                                monitor.incrementFailed()
-                            }
-                        }
-
-                        processedMethods.add(method.id)
-                        monitor.incrementProcessed()
-                    } catch (e: Exception) {
-                        logger.error("Rename error for ${method.methodName}: ${e.message}")
-                        processedMethods.add(method.id)
-                        monitor.incrementFailed()
-                    }
-                }
-            }
-        }
+        )
 
         // Producer: Leaf method들을 DeepSeek 큐에 공급
         val producerJob = launch(Dispatchers.IO) {

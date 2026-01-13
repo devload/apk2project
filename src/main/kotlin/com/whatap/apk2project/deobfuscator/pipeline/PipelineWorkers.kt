@@ -208,11 +208,11 @@ object PipelineWorkers {
         queueCounter: AtomicInteger,
         sourceCache: MethodSourceCache,
         extractFunc: (MethodNode) -> String?,
-        renameFunc: (File, MethodNode, MethodAnalysisResult) -> RenameResult,
+        renameFunc: (File, MethodNode, MethodAnalysisResult) -> com.whatap.apk2project.deobfuscator.renamer.RenameResult,
         processedMethods: MutableSet<String>,
-        successHandler: (MethodNode, MethodAnalysisResult, String, RenameResult.Success) -> Unit,
+        successHandler: (MethodNode, MethodAnalysisResult, String, com.whatap.apk2project.deobfuscator.renamer.RenameResult.Success) -> Unit,
         failureHandler: (MethodNode, String) -> Unit
-    ): List<Job> where RenameResult : com.whatap.apk2project.deobfuscator.renamer.RenameResult {
+    ): List<Job> {
         return launchWorkers(scope, WorkerConfig(workerCount, queue, queueCounter, "Rename")) { (method, analysis) ->
             val sourceCode = loadSourceCode(method, sourceCache, extractFunc)
 
