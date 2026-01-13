@@ -94,9 +94,6 @@ export default function WorkflowGraph({
   totalResourcesExtracted = 0,
   dependenciesDetected = 0,
 }: WorkflowGraphProps) {
-  // Horizontal/Vertical layout toggle
-  const [isVertical, setIsVertical] = useState(false);
-
   // Currently processing requests
   const analysisRequests = useMemo(() =>
     recentLlmRequests.filter(r => r.requestType === 'analysis').slice(0, batchSize),
@@ -116,507 +113,223 @@ export default function WorkflowGraph({
   const initialNodes: Node[] = useMemo(() => {
     const nodes: Node[] = [];
 
-    if (isVertical) {
-      // Vertical layout
-      const centerX = 700;  // Center X coordinate
-      const nodeSpacing = 120;  // Node spacing
-      const horizontalSpacing = 150;  // Horizontal spacing for parallel nodes
+    // 가로 레이아웃 (간소화된 버전 - 워커들을 요약 노드로 통합)
+    const centerY = 300;
+    const nodeSpacing = 220;  // 노드 간 간격 증가
 
-      // 1. Source Files
-      nodes.push({
-        id: 'source',
-        type: 'input',
-        data: { label: '📁 Source Files' },
-        position: { x: centerX, y: 50 },
-        sourcePosition: Position.Bottom,
-        style: getNodeStyle(currentPhase.includes('PHASE1_FILE_PARSING') ? 'processing' : 'completed'),
-      });
+    // PARSE 0: APK → Gradle Project (요약 노드)
+    const isParse0Active = currentPhase.includes('PARSE0_');
+    let parse0Label = '📦 APK → Gradle';
 
-      // 2. Phase 1: File Parsing
-      const isPhase1Active = currentPhase.includes('PHASE1_FILE_PARSING');
-      const parseLabel = isPhase1Active
-        ? `📝 Parse Files\nFiles: ${parsedFiles}/${totalFilesToParse}\nProgress: ${phase1Progress.toFixed(1)}%`
-        : parsedFiles > 0
-        ? `📝 Parse Files\n${parsedFiles} files\n✓ ${phase1Progress.toFixed(0)}%`
-        : '📝 Parse Files\nWaiting...';
+    if (parse0Step > 0) {
+      const stepNames = ['', 'Manifest', 'Decompile', 'Resources', 'Dependencies', 'Project'];
+      parse0Label = isParse0Active
+        ? `📦 APK → Gradle\nStep ${parse0Step}/5\n${stepNames[parse0Step] || 'Processing'}\n${parse0Progress.toFixed(0)}%`
+        : `📦 APK → Gradle\n✓ Complete`;
+    }
 
-      nodes.push({
-        id: 'parse',
-        data: { label: parseLabel },
-        position: { x: centerX, y: 200 },
-        sourcePosition: Position.Bottom,
-        targetPosition: Position.Top,
-        style: getNodeStyle(isPhase1Active ? 'processing' : phase1Progress > 0 ? 'completed' : 'pending'),
-      });
+    nodes.push({
+      id: 'parse0',
+      type: 'input',
+      data: { label: parse0Label },
+      position: { x: 50, y: centerY },
+      sourcePosition: Position.Right,
+      style: getNodeStyle(isParse0Active ? 'processing' : parse0Progress > 0 ? 'completed' : 'pending'),
+    });
 
-      // 3. Phase 2: Call Graph Building
-      const isPhase2Active = currentPhase.includes('PHASE2_CALL_GRAPH');
-      const graphLabel = isPhase2Active
-        ? `🔗 Call Graph\nClasses: ${callGraphClasses}/${totalCallGraphClasses}\nEdges: ${callGraphEdges}\nProgress: ${phase2Progress.toFixed(1)}%`
-        : callGraphEdges > 0
-        ? `🔗 Call Graph\n${totalClasses} classes\n${callGraphEdges} edges\n✓ ${phase2Progress.toFixed(0)}%`
-        : '🔗 Call Graph\nWaiting...';
+    // 1. Source Files (PARSE 1 start)
+    nodes.push({
+      id: 'source',
+      data: { label: '📁 Source Files' },
+      position: { x: 270, y: centerY },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      style: getNodeStyle(currentPhase.includes('PHASE1_FILE_PARSING') ? 'processing' : parse0Progress > 0 ? 'completed' : 'pending'),
+    });
 
-      nodes.push({
-        id: 'graph',
-        data: { label: graphLabel },
-        position: { x: centerX, y: 350 },
-        sourcePosition: Position.Bottom,
-        targetPosition: Position.Top,
-        style: getNodeStyle(isPhase2Active ? 'processing' : phase2Progress > 0 ? 'completed' : 'pending'),
-      });
+    // 2. Phase 1: File Parsing
+    const isPhase1Active = currentPhase.includes('PHASE1_FILE_PARSING');
+    const parseLabel = isPhase1Active
+      ? `📝 Parse Files\n${parsedFiles}/${totalFilesToParse}\n${phase1Progress.toFixed(1)}%`
+      : parsedFiles > 0
+      ? `📝 Parse Files\n${parsedFiles} files ✓`
+      : '📝 Parse Files';
 
-      // 4. Leaf Methods (methods that don't call other methods)
-      const isPhase4Active = currentPhase.includes('PHASE3_AI_ANALYSIS');
-      const leafLabel = isPhase4Active
-        ? `🎯 Leaf Methods\n${processedMethods}/${leafMethods}\nProgress: ${phase3Progress.toFixed(1)}%`
-        : leafMethods > 0
-        ? `🎯 Leaf Methods\n${leafMethods} found\n✓ ${phase3Progress.toFixed(0)}%`
-        : `🎯 Leaf Methods\nWaiting...`;
+    nodes.push({
+      id: 'parse',
+      data: { label: parseLabel },
+      position: { x: 490, y: centerY },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      style: getNodeStyle(isPhase1Active ? 'processing' : phase1Progress > 0 ? 'completed' : 'pending'),
+    });
 
-      nodes.push({
-        id: 'leaf',
-        data: { label: leafLabel },
-        position: { x: centerX, y: 500 },
-        sourcePosition: Position.Bottom,
-        targetPosition: Position.Top,
-        style: getNodeStyle(
-          isPhase4Active && processedMethods < leafMethods ? 'processing' :
-          currentPhase === 'COMPLETE' || phase3Progress > 0 ? 'completed' :  // ← Complete 추가
-          'pending'
-        ),
-      });
+    // 3. Phase 2: Call Graph Building
+    const isPhase2Active = currentPhase.includes('PHASE2_CALL_GRAPH');
+    const graphLabel = isPhase2Active
+      ? `🔗 Call Graph\n${callGraphClasses}/${totalCallGraphClasses}\n${phase2Progress.toFixed(1)}%`
+      : callGraphEdges > 0
+      ? `🔗 Call Graph\n${totalClasses} cls\n${callGraphEdges} edges ✓`
+      : '🔗 Call Graph';
 
-      // 5a. DeepSeek Queue
-      const deepseekQueueLabel = deepseekQueueSize > 0
-        ? `📦 DeepSeek Queue\n${deepseekQueueSize} waiting`
-        : `📦 DeepSeek Queue\nEmpty`;
+    nodes.push({
+      id: 'graph',
+      data: { label: graphLabel },
+      position: { x: 710, y: centerY },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      style: getNodeStyle(isPhase2Active ? 'processing' : phase2Progress > 0 ? 'completed' : 'pending'),
+    });
 
-      nodes.push({
-        id: 'deepseek-queue',
-        data: { label: deepseekQueueLabel },
-        position: { x: centerX, y: 580 },
-        sourcePosition: Position.Bottom,
-        targetPosition: Position.Top,
-        style: getNodeStyle(deepseekQueueSize > 0 ? 'processing' : 'pending'),
-      });
+    // 4. Leaf Methods (Phase 3 start point)
+    const isPhase3Active = currentPhase.includes('PHASE3_AI_ANALYSIS');
+    const leafLabel = isPhase3Active
+      ? `🎯 Methods\n${processedMethods}/${leafMethods}\n${phase3Progress.toFixed(1)}%`
+      : leafMethods > 0
+      ? `🎯 Methods\n${leafMethods} found ✓`
+      : `🎯 Methods\nWaiting...`;
 
-      // 5b. DeepSeek Analysis 노드들 (가로 배치)
-      const deepseekY = 660;
-      const startX = centerX - ((workerCount - 1) * horizontalSpacing / 2);
-      for (let i = 0; i < workerCount; i++) {
-        const request = analysisRequests[i];
-        const isProcessing = isPhase4Active && request;
+    nodes.push({
+      id: 'leaf',
+      data: { label: leafLabel },
+      position: { x: 930, y: centerY },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      style: getNodeStyle(
+        isPhase3Active && processedMethods < leafMethods ? 'processing' :
+        currentPhase === 'COMPLETE' || phase3Progress > 0 ? 'completed' :  // ← Complete 추가
+        'pending'
+      ),
+    });
 
-        let label = `🤖 DeepSeek ${i + 1}`;
-        if (request) {
-          const methodShort = request.methodName.length > 20
-            ? request.methodName.substring(0, 20) + '...'
-            : request.methodName;
-          const duration = (request.durationMs / 1000).toFixed(1);
-          const status = request.success ? '✓' : '✗';
-          label = `🤖 DeepSeek ${i + 1}\n${status} ${methodShort}\n(${duration}s)`;
-        }
+    // 5. DeepSeek Workers (요약 노드 - 개별 워커 대신)
+    const activeDeepseek = analysisRequests.length;
+    const deepseekLabel = isPhase3Active
+      ? `🤖 DeepSeek\n${workerCount} workers\n${deepseekQueueSize > 0 ? `Queue: ${deepseekQueueSize}` : `Active: ${activeDeepseek}`}`
+      : `🤖 DeepSeek\n${workerCount} workers`;
 
-        nodes.push({
-          id: `deepseek-${i}`,
-          data: { label },
-          position: { x: startX + (i * horizontalSpacing), y: deepseekY },
-          sourcePosition: Position.Bottom,
-          targetPosition: Position.Top,
-          style: getNodeStyle(
-            isProcessing ? 'processing' :
-            currentPhase.includes('PHASE4_CLASSES') || currentPhase === 'COMPLETE' ? 'completed' :
-            'pending'
-          ),
-        });
-      }
+    nodes.push({
+      id: 'deepseek-0',  // ID 유지 (엣지 연결용)
+      data: { label: deepseekLabel },
+      position: { x: 1150, y: centerY },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      style: getNodeStyle(
+        isPhase3Active && activeDeepseek > 0 ? 'processing' :
+        currentPhase.includes('PHASE4_CLASSES') || currentPhase === 'COMPLETE' ? 'completed' :
+        'pending'
+      ),
+    });
 
-      // 6a. Qwen Queue (only if Korean translation is enabled)
-      if (qwenQueueSize !== null) {
-        const qwenQueueLabel = qwenQueueSize > 0
-          ? `📦 Qwen Queue\n${qwenQueueSize} waiting`
-          : `📦 Qwen Queue\nEmpty`;
-
-        nodes.push({
-          id: 'qwen-queue',
-          data: { label: qwenQueueLabel },
-          position: { x: centerX, y: 750 },
-          sourcePosition: Position.Bottom,
-          targetPosition: Position.Top,
-          style: getNodeStyle(qwenQueueSize > 0 ? 'processing' : 'pending'),
-        });
-
-        // 6b. Qwen Translation nodes (horizontal layout)
-        const qwenY = 830;
-        for (let i = 0; i < workerCount; i++) {
-          const request = translationRequests[i];
-          const isProcessing = isPhase4Active && request;
-
-          let label = `🌏 Qwen ${i + 1}`;
-          if (request) {
-            const methodShort = request.methodName.length > 20
-              ? request.methodName.substring(0, 20) + '...'
-              : request.methodName;
-            const duration = (request.durationMs / 1000).toFixed(1);
-            const status = request.success ? '✓' : '✗';
-            label = `🌏 Qwen ${i + 1}\n${status} ${methodShort}\n(${duration}s)`;
-          }
-
-          nodes.push({
-            id: `qwen-${i}`,
-            data: { label },
-            position: { x: startX + (i * horizontalSpacing), y: qwenY },
-            sourcePosition: Position.Bottom,
-            targetPosition: Position.Top,
-            style: getNodeStyle(isProcessing ? 'processing' : renamedMethods > 0 ? 'completed' : 'pending'),
-          });
-        }
-      }
-
-      // Calculate Y positions based on whether Qwen is enabled
-      // Base positions assume no Qwen. Offsets are added when Qwen is enabled.
-      const qwenOffset = qwenQueueSize !== null ? 170 : 0;  // Space for Qwen Queue + Qwen workers
-      const classQwenOffset = classQwenQueueSize !== null ? 80 : 0;  // Space for Class Qwen Queue
-
-      // 7a. Rename Queue
-      const renameQueueLabel = renameQueueSize > 0
-        ? `📦 Rename Queue\n${renameQueueSize} waiting`
-        : `📦 Rename Queue\nEmpty`;
+    // 6. Qwen Workers (요약 노드) - only if Korean translation is enabled
+    if (qwenQueueSize !== null) {
+      const activeQwen = translationRequests.length;
+      const qwenLabel = isPhase3Active
+        ? `🌏 Qwen\n${workerCount} workers\n${qwenQueueSize > 0 ? `Queue: ${qwenQueueSize}` : `Active: ${activeQwen}`}`
+        : `🌏 Qwen\n${workerCount} workers`;
 
       nodes.push({
-        id: 'rename-queue',
-        data: { label: renameQueueLabel },
-        position: { x: centerX, y: 750 + qwenOffset },
-        sourcePosition: Position.Bottom,
-        targetPosition: Position.Top,
-        style: getNodeStyle(renameQueueSize > 0 ? 'processing' : 'pending'),
-      });
-
-      // 7b. Renamed (aggregation)
-      const successRate = processedMethods > 0
-        ? ((renamedMethods / processedMethods) * 100).toFixed(1)
-        : '0.0';
-      const renamedLabel = renamedMethods > 0
-        ? `✨ Rename Complete\n${renamedMethods} methods\nSuccess: ${successRate}%${failedMethods > 0 ? `\nFailed: ${failedMethods}` : ''}`
-        : '✨ Rename Complete\nWaiting...';
-
-      nodes.push({
-        id: 'renamed',
-        data: { label: renamedLabel },
-        position: { x: centerX, y: 830 + qwenOffset },
-        sourcePosition: Position.Bottom,
-        targetPosition: Position.Top,
-        style: getNodeStyle(
-          currentPhase === 'COMPLETE' || renamedMethods > 0 ? 'completed' : 'pending'  // ← Complete added
-        ),
-      });
-
-      // 7a. Phase 4 Queues - Class DeepSeek Queue
-      const classDeepseekQueueLabel = classDeepseekQueueSize > 0
-        ? `📦 Class DS Queue\n${classDeepseekQueueSize} waiting`
-        : `📦 Class DS Queue\nEmpty`;
-
-      nodes.push({
-        id: 'class-deepseek-queue',
-        data: { label: classDeepseekQueueLabel },
-        position: { x: centerX, y: 920 + qwenOffset },
-        sourcePosition: Position.Bottom,
-        targetPosition: Position.Top,
-        style: getNodeStyle(classDeepseekQueueSize > 0 ? 'processing' : 'pending'),
-      });
-
-      // 7b. Phase 4 Queues - Class Qwen Queue (only if Korean translation is enabled)
-      if (classQwenQueueSize !== null) {
-        const classQwenQueueLabel = classQwenQueueSize > 0
-          ? `📦 Class Qwen Queue\n${classQwenQueueSize} waiting`
-          : `📦 Class Qwen Queue\nEmpty`;
-
-        nodes.push({
-          id: 'class-qwen-queue',
-          data: { label: classQwenQueueLabel },
-          position: { x: centerX, y: 1000 + qwenOffset },
-          sourcePosition: Position.Bottom,
-          targetPosition: Position.Top,
-          style: getNodeStyle(classQwenQueueSize > 0 ? 'processing' : 'pending'),
-        });
-      }
-
-      // 7c. Phase 4 Queues - Class Rename Queue
-      const classRenameQueueLabel = classRenameQueueSize > 0
-        ? `📦 Class Rename Queue\n${classRenameQueueSize} waiting`
-        : `📦 Class Rename Queue\nEmpty`;
-
-      nodes.push({
-        id: 'class-rename-queue',
-        data: { label: classRenameQueueLabel },
-        position: { x: centerX, y: 1080 + qwenOffset + classQwenOffset },
-        sourcePosition: Position.Bottom,
-        targetPosition: Position.Top,
-        style: getNodeStyle(classRenameQueueSize > 0 ? 'processing' : 'pending'),
-      });
-
-      // 8. Phase 4: Class Renaming (Final)
-      const isPhase4ClassActive = currentPhase.includes('PHASE4_CLASSES');
-      const classLabel = isPhase4ClassActive
-        ? `🏗️ Phase 4\nRenaming Classes...`
-        : currentPhase === 'COMPLETE' || currentPhase.includes('PHASE5')
-        ? `🏗️ Phase 4\nClasses Renamed`
-        : `🏗️ Phase 4\nClass Renaming`;
-
-      nodes.push({
-        id: 'phase4',
-        data: { label: classLabel },
-        position: { x: centerX, y: 1160 + qwenOffset + classQwenOffset },
-        sourcePosition: Position.Bottom,
-        targetPosition: Position.Top,
-        style: getNodeStyle(
-          isPhase4ClassActive ? 'processing' :
-          currentPhase === 'COMPLETE' || currentPhase.includes('PHASE5') ? 'completed' :
-          'pending'
-        ),
-      });
-
-      // 9. Phase 5: Save Results
-      const isPhase5Active = currentPhase.includes('PHASE5_SAVE');
-      const saveLabel = isPhase5Active
-        ? `💾 Phase 5\nSaving Results...`
-        : currentPhase === 'COMPLETE'
-        ? `💾 Phase 5\nResults Saved`
-        : `💾 Phase 5\nSave Results`;
-
-      nodes.push({
-        id: 'phase5',
-        type: 'output',
-        data: { label: saveLabel },
-        position: { x: centerX, y: 1240 + qwenOffset + classQwenOffset },
-        targetPosition: Position.Top,
-        style: getNodeStyle(
-          isPhase5Active ? 'processing' :
-          currentPhase === 'COMPLETE' ? 'completed' :
-          'pending'
-        ),
-      });
-
-    } else {
-      // 가로 레이아웃 (간소화된 버전 - 워커들을 요약 노드로 통합)
-      const centerY = 300;
-      const nodeSpacing = 220;  // 노드 간 간격 증가
-
-      // PARSE 0: APK → Gradle Project (요약 노드)
-      const isParse0Active = currentPhase.includes('PARSE0_');
-      let parse0Label = '📦 APK → Gradle';
-
-      if (parse0Step > 0) {
-        const stepNames = ['', 'Manifest', 'Decompile', 'Resources', 'Dependencies', 'Project'];
-        parse0Label = isParse0Active
-          ? `📦 APK → Gradle\nStep ${parse0Step}/5\n${stepNames[parse0Step] || 'Processing'}\n${parse0Progress.toFixed(0)}%`
-          : `📦 APK → Gradle\n✓ Complete`;
-      }
-
-      nodes.push({
-        id: 'parse0',
-        type: 'input',
-        data: { label: parse0Label },
-        position: { x: 50, y: centerY },
-        sourcePosition: Position.Right,
-        style: getNodeStyle(isParse0Active ? 'processing' : parse0Progress > 0 ? 'completed' : 'pending'),
-      });
-
-      // 1. Source Files (PARSE 1 start)
-      nodes.push({
-        id: 'source',
-        data: { label: '📁 Source Files' },
-        position: { x: 270, y: centerY },
+        id: 'qwen-0',  // ID 유지 (엣지 연결용)
+        data: { label: qwenLabel },
+        position: { x: 1370, y: centerY },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
-        style: getNodeStyle(currentPhase.includes('PHASE1_FILE_PARSING') ? 'processing' : parse0Progress > 0 ? 'completed' : 'pending'),
+        style: getNodeStyle(isPhase3Active && activeQwen > 0 ? 'processing' : renamedMethods > 0 ? 'completed' : 'pending'),
       });
+    }
 
-      // 2. Phase 1: File Parsing
-      const isPhase1Active = currentPhase.includes('PHASE1_FILE_PARSING');
-      const parseLabel = isPhase1Active
-        ? `📝 Parse Files\n${parsedFiles}/${totalFilesToParse}\n${phase1Progress.toFixed(1)}%`
-        : parsedFiles > 0
-        ? `📝 Parse Files\n${parsedFiles} files ✓`
-        : '📝 Parse Files';
+    // 7. Renamed (결과 집계)
+    const successRate = processedMethods > 0
+      ? ((renamedMethods / processedMethods) * 100).toFixed(1)
+      : '0.0';
+    const renamedLabel = renamedMethods > 0
+      ? `✨ Rename Complete\n${renamedMethods} methods\n${successRate}% success${failedMethods > 0 ? `\n${failedMethods} failed` : ''}`
+      : '✨ Rename Complete\nWaiting...';
 
+    // Qwen이 없으면 Renamed를 더 가까이 배치 (DeepSeek 바로 다음)
+    const renamedX = qwenQueueSize !== null ? 1590 : 1370;
+
+    nodes.push({
+      id: 'renamed',
+      data: { label: renamedLabel },
+      position: { x: renamedX, y: centerY },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      style: getNodeStyle(
+        currentPhase === 'COMPLETE' || renamedMethods > 0 ? 'completed' : 'pending'  // ← Complete 추가
+      ),
+    });
+
+    // 8. Phase 4: Class Renaming
+    const isPhase4ClassActive = currentPhase.includes('PHASE4_CLASSES');
+    const classQueueTotal = classDeepseekQueueSize + (classQwenQueueSize ?? 0) + classRenameQueueSize;
+    const classLabel = isPhase4ClassActive
+      ? `🏗️ Classes\nRenaming...\n${classQueueTotal > 0 ? `Queue: ${classQueueTotal}` : ''}`
+      : currentPhase === 'COMPLETE' || currentPhase.includes('PHASE5')
+      ? `🏗️ Classes\nRenamed ✓`
+      : `🏗️ Classes\nWaiting...`;
+
+    // Phase 4도 Qwen이 없으면 위치 조정
+    const phase4X = qwenQueueSize !== null ? 1810 : 1590;
+
+    nodes.push({
+      id: 'phase4',
+      data: { label: classLabel },
+      position: { x: phase4X, y: centerY },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      style: getNodeStyle(
+        isPhase4ClassActive ? 'processing' :
+        currentPhase === 'COMPLETE' || currentPhase.includes('PHASE5') ? 'completed' :
+        'pending'
+      ),
+    });
+
+    // 9. Phase 5: Save Results
+    const isPhase5Active = currentPhase.includes('PHASE5_SAVE');
+    const saveLabel = isPhase5Active
+      ? `💾 Save\nSaving...`
+      : currentPhase === 'COMPLETE'
+      ? `💾 Save\nComplete ✓`
+      : `💾 Save\nWaiting...`;
+
+    // Phase 5 also adjust position if Qwen is not available
+    const phase5X = qwenQueueSize !== null ? 2030 : 1810;
+
+    nodes.push({
+      id: 'phase5',
+      type: 'output',
+      data: { label: saveLabel },
+      position: { x: phase5X, y: centerY },
+      targetPosition: Position.Left,
+      style: getNodeStyle(
+        isPhase5Active ? 'processing' :
+        currentPhase === 'COMPLETE' ? 'completed' :
+        'pending'
+      ),
+    });
+
+    // Hidden queue nodes for edge compatibility (only create if Qwen is enabled)
+    // These are needed because the edge definitions reference these IDs
+    if (qwenQueueSize !== null) {
       nodes.push({
-        id: 'parse',
-        data: { label: parseLabel },
-        position: { x: 490, y: centerY },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-        style: getNodeStyle(isPhase1Active ? 'processing' : phase1Progress > 0 ? 'completed' : 'pending'),
+        id: 'qwen-queue',
+        data: { label: '' },
+        position: { x: 1370, y: centerY },
+        style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
       });
-
-      // 3. Phase 2: Call Graph Building
-      const isPhase2Active = currentPhase.includes('PHASE2_CALL_GRAPH');
-      const graphLabel = isPhase2Active
-        ? `🔗 Call Graph\n${callGraphClasses}/${totalCallGraphClasses}\n${phase2Progress.toFixed(1)}%`
-        : callGraphEdges > 0
-        ? `🔗 Call Graph\n${totalClasses} cls\n${callGraphEdges} edges ✓`
-        : '🔗 Call Graph';
-
+    }
+    if (classQwenQueueSize !== null) {
       nodes.push({
-        id: 'graph',
-        data: { label: graphLabel },
-        position: { x: 710, y: centerY },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-        style: getNodeStyle(isPhase2Active ? 'processing' : phase2Progress > 0 ? 'completed' : 'pending'),
+        id: 'class-qwen-queue',
+        data: { label: '' },
+        position: { x: 1810, y: centerY },
+        style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
       });
-
-      // 4. Leaf Methods (Phase 3 start point)
-      const isPhase3Active = currentPhase.includes('PHASE3_AI_ANALYSIS');
-      const leafLabel = isPhase3Active
-        ? `🎯 Methods\n${processedMethods}/${leafMethods}\n${phase3Progress.toFixed(1)}%`
-        : leafMethods > 0
-        ? `🎯 Methods\n${leafMethods} found ✓`
-        : `🎯 Methods\nWaiting...`;
-
-      nodes.push({
-        id: 'leaf',
-        data: { label: leafLabel },
-        position: { x: 930, y: centerY },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-        style: getNodeStyle(
-          isPhase3Active && processedMethods < leafMethods ? 'processing' :
-          currentPhase === 'COMPLETE' || phase3Progress > 0 ? 'completed' :  // ← Complete 추가
-          'pending'
-        ),
-      });
-
-      // 5. DeepSeek Workers (요약 노드 - 개별 워커 대신)
-      const activeDeepseek = analysisRequests.length;
-      const deepseekLabel = isPhase3Active
-        ? `🤖 DeepSeek\n${workerCount} workers\n${deepseekQueueSize > 0 ? `Queue: ${deepseekQueueSize}` : `Active: ${activeDeepseek}`}`
-        : `🤖 DeepSeek\n${workerCount} workers`;
-
-      nodes.push({
-        id: 'deepseek-0',  // ID 유지 (엣지 연결용)
-        data: { label: deepseekLabel },
-        position: { x: 1150, y: centerY },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-        style: getNodeStyle(
-          isPhase3Active && activeDeepseek > 0 ? 'processing' :
-          currentPhase.includes('PHASE4_CLASSES') || currentPhase === 'COMPLETE' ? 'completed' :
-          'pending'
-        ),
-      });
-
-      // 6. Qwen Workers (요약 노드) - only if Korean translation is enabled
-      if (qwenQueueSize !== null) {
-        const activeQwen = translationRequests.length;
-        const qwenLabel = isPhase3Active
-          ? `🌏 Qwen\n${workerCount} workers\n${qwenQueueSize > 0 ? `Queue: ${qwenQueueSize}` : `Active: ${activeQwen}`}`
-          : `🌏 Qwen\n${workerCount} workers`;
-
-        nodes.push({
-          id: 'qwen-0',  // ID 유지 (엣지 연결용)
-          data: { label: qwenLabel },
-          position: { x: 1370, y: centerY },
-          sourcePosition: Position.Right,
-          targetPosition: Position.Left,
-          style: getNodeStyle(isPhase3Active && activeQwen > 0 ? 'processing' : renamedMethods > 0 ? 'completed' : 'pending'),
-        });
-      }
-
-      // 7. Renamed (결과 집계)
-      const successRate = processedMethods > 0
-        ? ((renamedMethods / processedMethods) * 100).toFixed(1)
-        : '0.0';
-      const renamedLabel = renamedMethods > 0
-        ? `✨ Rename Complete\n${renamedMethods} methods\n${successRate}% success${failedMethods > 0 ? `\n${failedMethods} failed` : ''}`
-        : '✨ Rename Complete\nWaiting...';
-
-      // Qwen이 없으면 Renamed를 더 가까이 배치 (DeepSeek 바로 다음)
-      const renamedX = qwenQueueSize !== null ? 1590 : 1370;
-
-      nodes.push({
-        id: 'renamed',
-        data: { label: renamedLabel },
-        position: { x: renamedX, y: centerY },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-        style: getNodeStyle(
-          currentPhase === 'COMPLETE' || renamedMethods > 0 ? 'completed' : 'pending'  // ← Complete 추가
-        ),
-      });
-
-      // 8. Phase 4: Class Renaming
-      const isPhase4ClassActive = currentPhase.includes('PHASE4_CLASSES');
-      const classQueueTotal = classDeepseekQueueSize + (classQwenQueueSize ?? 0) + classRenameQueueSize;
-      const classLabel = isPhase4ClassActive
-        ? `🏗️ Classes\nRenaming...\n${classQueueTotal > 0 ? `Queue: ${classQueueTotal}` : ''}`
-        : currentPhase === 'COMPLETE' || currentPhase.includes('PHASE5')
-        ? `🏗️ Classes\nRenamed ✓`
-        : `🏗️ Classes\nWaiting...`;
-
-      // Phase 4도 Qwen이 없으면 위치 조정
-      const phase4X = qwenQueueSize !== null ? 1810 : 1590;
-
-      nodes.push({
-        id: 'phase4',
-        data: { label: classLabel },
-        position: { x: phase4X, y: centerY },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-        style: getNodeStyle(
-          isPhase4ClassActive ? 'processing' :
-          currentPhase === 'COMPLETE' || currentPhase.includes('PHASE5') ? 'completed' :
-          'pending'
-        ),
-      });
-
-      // 9. Phase 5: Save Results
-      const isPhase5Active = currentPhase.includes('PHASE5_SAVE');
-      const saveLabel = isPhase5Active
-        ? `💾 Save\nSaving...`
-        : currentPhase === 'COMPLETE'
-        ? `💾 Save\nComplete ✓`
-        : `💾 Save\nWaiting...`;
-
-      // Phase 5 also adjust position if Qwen is not available
-      const phase5X = qwenQueueSize !== null ? 2030 : 1810;
-
-      nodes.push({
-        id: 'phase5',
-        type: 'output',
-        data: { label: saveLabel },
-        position: { x: phase5X, y: centerY },
-        targetPosition: Position.Left,
-        style: getNodeStyle(
-          isPhase5Active ? 'processing' :
-          currentPhase === 'COMPLETE' ? 'completed' :
-          'pending'
-        ),
-      });
-
-      // Hidden queue nodes for edge compatibility (only create if Qwen is enabled)
-      // These are needed because the edge definitions reference these IDs
-      if (qwenQueueSize !== null) {
-        nodes.push({
-          id: 'qwen-queue',
-          data: { label: '' },
-          position: { x: 1370, y: centerY },
-          style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
-        });
-      }
-      if (classQwenQueueSize !== null) {
-        nodes.push({
-          id: 'class-qwen-queue',
-          data: { label: '' },
-          position: { x: 1810, y: centerY },
-          style: { display: 'none', width: 0, height: 0, padding: 0, border: 'none' },
-        });
-      }
     }
 
     return nodes;
-  }, [isVertical, currentPhase, processedMethods, renamedMethods, leafMethods, batchSize, analysisRequests, translationRequests, parsedFiles, totalFilesToParse, phase1Progress, callGraphClasses, totalCallGraphClasses, phase2Progress, callGraphEdges, totalClasses, phase3Progress, workerCount, deepseekQueueSize, qwenQueueSize, renameQueueSize, classDeepseekQueueSize, classQwenQueueSize, classRenameQueueSize, parse0Step, parse0Progress]);
+  }, [currentPhase, processedMethods, renamedMethods, leafMethods, batchSize, analysisRequests, translationRequests, parsedFiles, totalFilesToParse, phase1Progress, callGraphClasses, totalCallGraphClasses, phase2Progress, callGraphEdges, totalClasses, phase3Progress, workerCount, deepseekQueueSize, qwenQueueSize, renameQueueSize, classDeepseekQueueSize, classQwenQueueSize, classRenameQueueSize, parse0Step, parse0Progress]);
 
   // Dynamic edge generation (simplified version)
   const initialEdges: Edge[] = useMemo(() => {
@@ -626,185 +339,172 @@ export default function WorkflowGraph({
 
     // PARSE 0 → Source
     edges.push({
-      id: 'e-parse0-source',
-      source: 'parse0',
-      target: 'source',
-      animated: isParse0Active,
-      style: { stroke: '#ff9500' },
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#ff9500' }
+    id: 'e-parse0-source',
+    source: 'parse0',
+    target: 'source',
+    animated: isParse0Active,
+    style: { stroke: '#ff9500' },
+    markerEnd: { type: MarkerType.ArrowClosed, color: '#ff9500' }
     });
 
     // Source → Parse
     edges.push({
-      id: 'e-source-parse',
-      source: 'source',
-      target: 'parse',
-      animated: currentPhase.includes('PHASE1_FILE_PARSING'),
-      style: { stroke: '#00d9ff' },
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#00d9ff' }
+    id: 'e-source-parse',
+    source: 'source',
+    target: 'parse',
+    animated: currentPhase.includes('PHASE1_FILE_PARSING'),
+    style: { stroke: '#00d9ff' },
+    markerEnd: { type: MarkerType.ArrowClosed, color: '#00d9ff' }
     });
 
     // Parse → Graph
     edges.push({
-      id: 'e-parse-graph',
-      source: 'parse',
-      target: 'graph',
-      animated: currentPhase.includes('PHASE2_CALL_GRAPH'),
-      style: { stroke: '#00d9ff' },
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#00d9ff' }
+    id: 'e-parse-graph',
+    source: 'parse',
+    target: 'graph',
+    animated: currentPhase.includes('PHASE2_CALL_GRAPH'),
+    style: { stroke: '#00d9ff' },
+    markerEnd: { type: MarkerType.ArrowClosed, color: '#00d9ff' }
     });
 
     // Graph → Leaf
     edges.push({
-      id: 'e-graph-leaf',
-      source: 'graph',
-      target: 'leaf',
-      animated: isPhase3Active,
-      style: { stroke: '#00d9ff' },
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#00d9ff' }
+    id: 'e-graph-leaf',
+    source: 'graph',
+    target: 'leaf',
+    animated: isPhase3Active,
+    style: { stroke: '#00d9ff' },
+    markerEnd: { type: MarkerType.ArrowClosed, color: '#00d9ff' }
     });
 
     // Leaf → DeepSeek (direct connection)
     edges.push({
-      id: 'e-leaf-deepseek',
-      source: 'leaf',
-      target: 'deepseek-0',
-      animated: isPhase3Active,
-      style: { stroke: '#00d9ff' },
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#00d9ff' }
+    id: 'e-leaf-deepseek',
+    source: 'leaf',
+    target: 'deepseek-0',
+    animated: isPhase3Active,
+    style: { stroke: '#00d9ff' },
+    markerEnd: { type: MarkerType.ArrowClosed, color: '#00d9ff' }
     });
 
     // DeepSeek → Qwen (only if Korean translation is enabled)
     // Otherwise, DeepSeek → Renamed directly
     if (qwenQueueSize !== null) {
-      edges.push({
-        id: 'e-deepseek-qwen',
-        source: 'deepseek-0',
-        target: 'qwen-0',
-        animated: isPhase3Active,
-        style: { stroke: '#a855f7' },
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#a855f7' }
-      });
+    edges.push({
+      id: 'e-deepseek-qwen',
+      source: 'deepseek-0',
+      target: 'qwen-0',
+      animated: isPhase3Active,
+      style: { stroke: '#a855f7' },
+      markerEnd: { type: MarkerType.ArrowClosed, color: '#a855f7' }
+    });
 
-      // Qwen → Renamed
-      edges.push({
-        id: 'e-qwen-renamed',
-        source: 'qwen-0',
-        target: 'renamed',
-        animated: isPhase3Active || renamedMethods > 0,
-        style: { stroke: '#00ff88' },
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#00ff88' }
-      });
+    // Qwen → Renamed
+    edges.push({
+      id: 'e-qwen-renamed',
+      source: 'qwen-0',
+      target: 'renamed',
+      animated: isPhase3Active || renamedMethods > 0,
+      style: { stroke: '#00ff88' },
+      markerEnd: { type: MarkerType.ArrowClosed, color: '#00ff88' }
+    });
     } else {
-      // DeepSeek → Renamed directly (no Korean translation)
-      edges.push({
-        id: 'e-deepseek-renamed',
-        source: 'deepseek-0',
-        target: 'renamed',
-        animated: isPhase3Active || renamedMethods > 0,
-        style: { stroke: '#00ff88' },
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#00ff88' }
-      });
+    // DeepSeek → Renamed directly (no Korean translation)
+    edges.push({
+      id: 'e-deepseek-renamed',
+      source: 'deepseek-0',
+      target: 'renamed',
+      animated: isPhase3Active || renamedMethods > 0,
+      style: { stroke: '#00ff88' },
+      markerEnd: { type: MarkerType.ArrowClosed, color: '#00ff88' }
+    });
     }
 
     // Renamed → Phase 4
     edges.push({
-      id: 'e-renamed-phase4',
-      source: 'renamed',
-      target: 'phase4',
-      animated: currentPhase.includes('PHASE4_CLASSES'),
-      style: { stroke: '#ffaa00' },
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#ffaa00' }
+    id: 'e-renamed-phase4',
+    source: 'renamed',
+    target: 'phase4',
+    animated: currentPhase.includes('PHASE4_CLASSES'),
+    style: { stroke: '#ffaa00' },
+    markerEnd: { type: MarkerType.ArrowClosed, color: '#ffaa00' }
     });
 
     // Phase 4 → Phase 5
     edges.push({
-      id: 'e-phase4-phase5',
-      source: 'phase4',
-      target: 'phase5',
-      animated: currentPhase.includes('PHASE5_SAVE') || currentPhase === 'COMPLETE',
-      style: { stroke: '#00ffcc' },
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#00ffcc' }
+    id: 'e-phase4-phase5',
+    source: 'phase4',
+    target: 'phase5',
+    animated: currentPhase.includes('PHASE5_SAVE') || currentPhase === 'COMPLETE',
+    style: { stroke: '#00ffcc' },
+    markerEnd: { type: MarkerType.ArrowClosed, color: '#00ffcc' }
     });
 
     return edges;
   }, [currentPhase, renamedMethods, parse0Step, parse0Progress, qwenQueueSize]);
 
-  const containerHeight = isVertical ? '1600px' : '450px';  // Horizontal layout is compact
-
   return (
-    <div style={{ width: '100%', height: containerHeight }} className="bg-slate-900/50 rounded-lg border border-purple-500/20 relative">
-      {/* Iteration Badge */}
-      <div className="absolute top-4 left-4 z-10">
-        <div className={`px-4 py-2 rounded-lg font-semibold text-sm border shadow-lg flex items-center gap-2 ${
-          currentIteration > 1
-            ? 'bg-cyan-600/80 border-cyan-400/30 text-white'
-            : 'bg-slate-700/80 border-slate-500/30 text-gray-300'
-        }`}>
-          <span className="text-lg">🔄</span>
-          <span>Iteration {currentIteration}</span>
-          {currentIteration > 1 && (
-            <span className="text-xs bg-cyan-500/30 px-2 py-0.5 rounded">Loop</span>
-          )}
+    <div style={{ width: '100%', height: '450px' }} className="bg-slate-900/50 rounded-lg border border-purple-500/20 relative">
+    {/* Iteration Badge */}
+    <div className="absolute top-4 left-4 z-10">
+      <div className={`px-4 py-2 rounded-lg font-semibold text-sm border shadow-lg flex items-center gap-2 ${
+        currentIteration > 1
+          ? 'bg-cyan-600/80 border-cyan-400/30 text-white'
+          : 'bg-slate-700/80 border-slate-500/30 text-gray-300'
+      }`}>
+        <span className="text-lg">🔄</span>
+        <span>Iteration {currentIteration}</span>
+        {currentIteration > 1 && (
+          <span className="text-xs bg-cyan-500/30 px-2 py-0.5 rounded">Loop</span>
+        )}
+      </div>
+    </div>
+
+    <ReactFlow
+      nodes={initialNodes}
+      edges={initialEdges}
+      fitView
+      attributionPosition="bottom-left"
+      proOptions={{ hideAttribution: true }}
+    >
+      <Background color="#4b5563" gap={16} />
+    </ReactFlow>
+
+    {/* Pipeline Legend - Compact */}
+    <div className="absolute bottom-4 left-4 bg-slate-900/30 backdrop-blur-md border border-slate-700/50 rounded-lg px-3 py-2 shadow-xl">
+      <div className="flex items-center gap-3 text-xs">
+        <span className="text-slate-400 font-medium">Phases:</span>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#ff9500' }}></div>
+          <span className="text-slate-300">PARSE0</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#00d9ff' }}></div>
+          <span className="text-slate-300">P1-2</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#a855f7' }}></div>
+          <span className="text-slate-300">P3</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#ffaa00' }}></div>
+          <span className="text-slate-300">P4</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#00ffcc' }}></div>
+          <span className="text-slate-300">P5</span>
+        </div>
+        <span className="text-slate-600">|</span>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded-sm border-2 border-cyan-400 bg-cyan-400/30"></div>
+          <span className="text-slate-400">Processing</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded-sm border-2 border-green-400 bg-green-400/30"></div>
+          <span className="text-slate-400">Done</span>
         </div>
       </div>
-
-      {/* 레이아웃 토글 버튼 */}
-      <div className="absolute top-4 right-4 z-10">
-        <button
-          onClick={() => setIsVertical(!isVertical)}
-          className="w-12 h-12 flex items-center justify-center bg-purple-600/80 hover:bg-purple-500 text-white rounded-lg transition-colors duration-200 text-2xl border border-purple-400/30 shadow-lg"
-          title={isVertical ? "Switch to horizontal layout" : "Switch to vertical layout"}
-        >
-          {isVertical ? '↔️' : '↕️'}
-        </button>
-      </div>
-
-      <ReactFlow
-        nodes={initialNodes}
-        edges={initialEdges}
-        fitView
-        attributionPosition="bottom-left"
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background color="#4b5563" gap={16} />
-      </ReactFlow>
-
-      {/* Pipeline Legend - Compact */}
-      <div className="absolute bottom-4 left-4 bg-slate-900/30 backdrop-blur-md border border-slate-700/50 rounded-lg px-3 py-2 shadow-xl">
-        <div className="flex items-center gap-3 text-xs">
-          <span className="text-slate-400 font-medium">Phases:</span>
-          <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#ff9500' }}></div>
-            <span className="text-slate-300">PARSE0</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#00d9ff' }}></div>
-            <span className="text-slate-300">P1-2</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#a855f7' }}></div>
-            <span className="text-slate-300">P3</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#ffaa00' }}></div>
-            <span className="text-slate-300">P4</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#00ffcc' }}></div>
-            <span className="text-slate-300">P5</span>
-          </div>
-          <span className="text-slate-600">|</span>
-          <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded-sm border-2 border-cyan-400 bg-cyan-400/30"></div>
-            <span className="text-slate-400">Processing</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded-sm border-2 border-green-400 bg-green-400/30"></div>
-            <span className="text-slate-400">Done</span>
-          </div>
-        </div>
-      </div>
+    </div>
     </div>
   );
 }
@@ -825,27 +525,27 @@ function getNodeStyle(status: 'pending' | 'processing' | 'completed') {
 
   switch (status) {
     case 'processing':
-      return {
-        ...baseStyle,
-        background: 'linear-gradient(135deg, rgba(0,217,255,0.3) 0%, rgba(168,85,247,0.3) 100%)',
-        borderColor: '#00d9ff',
-        color: '#00d9ff',
-        boxShadow: '0 0 20px rgba(0,217,255,0.5)',
-      };
+    return {
+      ...baseStyle,
+      background: 'linear-gradient(135deg, rgba(0,217,255,0.3) 0%, rgba(168,85,247,0.3) 100%)',
+      borderColor: '#00d9ff',
+      color: '#00d9ff',
+      boxShadow: '0 0 20px rgba(0,217,255,0.5)',
+    };
     case 'completed':
-      return {
-        ...baseStyle,
-        background: 'linear-gradient(135deg, rgba(0,255,136,0.2) 0%, rgba(0,217,255,0.2) 100%)',
-        borderColor: '#00ff88',
-        color: '#00ff88',
-      };
+    return {
+      ...baseStyle,
+      background: 'linear-gradient(135deg, rgba(0,255,136,0.2) 0%, rgba(0,217,255,0.2) 100%)',
+      borderColor: '#00ff88',
+      color: '#00ff88',
+    };
     case 'pending':
     default:
-      return {
-        ...baseStyle,
-        background: 'rgba(100,116,139,0.15)',
-        borderColor: '#64748b',
-        color: '#94a3b8',
-      };
+    return {
+      ...baseStyle,
+      background: 'rgba(100,116,139,0.15)',
+      borderColor: '#64748b',
+      color: '#94a3b8',
+    };
   }
 }
