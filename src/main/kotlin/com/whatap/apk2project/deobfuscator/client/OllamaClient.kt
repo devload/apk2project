@@ -303,11 +303,11 @@ Rules:
 - Analyze the CLASSES to understand package purpose
 - Use standard Java package naming (lowercase, dot-separated)
 - Common package patterns: com.company.feature, com.company.module.submodule
-- Examples: com.payment.api, com.hanacard.user, com.app.network
+- Examples: com.example.api, com.example.user, com.app.network
 - Keep names concise and descriptive
 - confidence: 0.0-1.0 (higher = more certain)
 
-Example: {"name":"com.payment.api","desc":"payment processing API","reasoning":"payment-related service classes","confidence":0.9}"""
+Example: {"name":"com.example.api","desc":"API layer for network operations","reasoning":"contains network request classes and REST API interfaces","confidence":0.9}"""
     }
 
     /**
