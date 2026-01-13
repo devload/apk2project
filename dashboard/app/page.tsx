@@ -15,7 +15,7 @@ interface ProgressStatus {
   totalMethods: number;
   leafMethods: number;
   processedMethods: number;
-  processedClasses: number;
+  processedClasses?: number;  // Optional for backward compatibility
   renamedMethods: number;
   failedMethods: number;
   currentIteration: number;
@@ -201,7 +201,7 @@ export default function Dashboard() {
         />
         <StatusCard
           title="Classes (P4)"
-          value={`${status.processedClasses} processed`}
+          value={`${status.processedClasses ?? 0} processed`}
           subtitle={`Total: ${status.totalClasses} • ${status.phase4Progress.toFixed(1)}%`}
           icon="🏗️"
           progress={status.phase4Progress}
@@ -261,7 +261,7 @@ export default function Dashboard() {
                 </span>
               </div>
               <div className="text-2xl font-bold mb-1">
-                {status.processedClasses} processed
+                {status.processedClasses ?? 0} processed
               </div>
               <div className="text-sm text-gray-400 mb-2">
                 Total: {status.totalClasses.toLocaleString()} classes
