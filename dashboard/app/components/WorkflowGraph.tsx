@@ -274,6 +274,11 @@ export default function WorkflowGraph({
         }
       }
 
+      // Calculate Y positions based on whether Qwen is enabled
+      // Base positions assume no Qwen. Offsets are added when Qwen is enabled.
+      const qwenOffset = qwenQueueSize !== null ? 170 : 0;  // Space for Qwen Queue + Qwen workers
+      const classQwenOffset = classQwenQueueSize !== null ? 80 : 0;  // Space for Class Qwen Queue
+
       // 7a. Rename Queue
       const renameQueueLabel = renameQueueSize > 0
         ? `📦 Rename Queue\n${renameQueueSize} waiting`
@@ -282,7 +287,7 @@ export default function WorkflowGraph({
       nodes.push({
         id: 'rename-queue',
         data: { label: renameQueueLabel },
-        position: { x: centerX, y: 920 },
+        position: { x: centerX, y: 750 + qwenOffset },
         sourcePosition: Position.Bottom,
         targetPosition: Position.Top,
         style: getNodeStyle(renameQueueSize > 0 ? 'processing' : 'pending'),
@@ -299,7 +304,7 @@ export default function WorkflowGraph({
       nodes.push({
         id: 'renamed',
         data: { label: renamedLabel },
-        position: { x: centerX, y: 1000 },
+        position: { x: centerX, y: 830 + qwenOffset },
         sourcePosition: Position.Bottom,
         targetPosition: Position.Top,
         style: getNodeStyle(
@@ -315,25 +320,27 @@ export default function WorkflowGraph({
       nodes.push({
         id: 'class-deepseek-queue',
         data: { label: classDeepseekQueueLabel },
-        position: { x: centerX, y: 1080 },
+        position: { x: centerX, y: 920 + qwenOffset },
         sourcePosition: Position.Bottom,
         targetPosition: Position.Top,
         style: getNodeStyle(classDeepseekQueueSize > 0 ? 'processing' : 'pending'),
       });
 
-      // 7b. Phase 4 Queues - Class Qwen Queue
-      const classQwenQueueLabel = classQwenQueueSize !== null && classQwenQueueSize > 0
-        ? `📦 Class Qwen Queue\n${classQwenQueueSize} waiting`
-        : `📦 Class Qwen Queue\nEmpty`;
+      // 7b. Phase 4 Queues - Class Qwen Queue (only if Korean translation is enabled)
+      if (classQwenQueueSize !== null) {
+        const classQwenQueueLabel = classQwenQueueSize > 0
+          ? `📦 Class Qwen Queue\n${classQwenQueueSize} waiting`
+          : `📦 Class Qwen Queue\nEmpty`;
 
-      nodes.push({
-        id: 'class-qwen-queue',
-        data: { label: classQwenQueueLabel },
-        position: { x: centerX, y: 1160 },
-        sourcePosition: Position.Bottom,
-        targetPosition: Position.Top,
-        style: getNodeStyle(classQwenQueueSize !== null && classQwenQueueSize > 0 ? 'processing' : 'pending'),
-      });
+        nodes.push({
+          id: 'class-qwen-queue',
+          data: { label: classQwenQueueLabel },
+          position: { x: centerX, y: 1000 + qwenOffset },
+          sourcePosition: Position.Bottom,
+          targetPosition: Position.Top,
+          style: getNodeStyle(classQwenQueueSize > 0 ? 'processing' : 'pending'),
+        });
+      }
 
       // 7c. Phase 4 Queues - Class Rename Queue
       const classRenameQueueLabel = classRenameQueueSize > 0
@@ -343,7 +350,7 @@ export default function WorkflowGraph({
       nodes.push({
         id: 'class-rename-queue',
         data: { label: classRenameQueueLabel },
-        position: { x: centerX, y: 1240 },
+        position: { x: centerX, y: 1080 + qwenOffset + classQwenOffset },
         sourcePosition: Position.Bottom,
         targetPosition: Position.Top,
         style: getNodeStyle(classRenameQueueSize > 0 ? 'processing' : 'pending'),
@@ -360,7 +367,7 @@ export default function WorkflowGraph({
       nodes.push({
         id: 'phase4',
         data: { label: classLabel },
-        position: { x: centerX, y: 1320 },
+        position: { x: centerX, y: 1160 + qwenOffset + classQwenOffset },
         sourcePosition: Position.Bottom,
         targetPosition: Position.Top,
         style: getNodeStyle(
@@ -382,7 +389,7 @@ export default function WorkflowGraph({
         id: 'phase5',
         type: 'output',
         data: { label: saveLabel },
-        position: { x: centerX, y: 1450 },
+        position: { x: centerX, y: 1240 + qwenOffset + classQwenOffset },
         targetPosition: Position.Top,
         style: getNodeStyle(
           isPhase5Active ? 'processing' :
