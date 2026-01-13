@@ -87,16 +87,20 @@ class OllamaClient(
             val result = parseMethodAnalysis(response, method)
 
             // 성공 조건: result가 null이 아니고 suggestedName이 원본과 다름
-            if (result != null && result.suggestedName != method.methodName) {
-                monitor?.addLlmRequest(
-                    methodName = method.methodName,
-                    requestType = "analysis",
-                    model = modelName,
-                    promptPreview = prompt.take(200),
-                    response = response.take(500),
-                    durationMs = duration,
-                    success = true
-                )
+            val success = result != null && result.suggestedName != method.methodName
+
+            // Always log the request (both success and failure)
+            monitor?.addLlmRequest(
+                methodName = method.methodName,
+                requestType = "analysis",
+                model = modelName,
+                promptPreview = prompt.take(200),
+                response = response.take(500),
+                durationMs = duration,
+                success = success
+            )
+
+            if (success) {
                 result
             } else {
                 when {
