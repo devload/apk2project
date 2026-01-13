@@ -220,66 +220,6 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Phase Progress Detail */}
-      {(status.phase3Progress > 0 || status.phase4Progress > 0) && (
-        <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 mb-8 border border-purple-500/20">
-          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-            <span>📊</span> Phase Progress Detail
-          </h2>
-          <div className="grid grid-cols-2 gap-6">
-            {/* Phase 3: Method Deobfuscation */}
-            <div className="bg-slate-900/50 rounded-lg p-4 border border-cyan-500/20">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-400">Phase 3: Methods</span>
-                <span className="text-xs bg-cyan-600/30 px-2 py-0.5 rounded text-cyan-300">
-                  Iteration {status.currentIteration}
-                </span>
-              </div>
-              <div className="text-2xl font-bold mb-1">
-                {status.processedMethods} processed
-              </div>
-              <div className="text-sm text-gray-400 mb-2">
-                Total: {status.leafMethods} methods
-              </div>
-              <div className="w-full bg-slate-700 rounded-full h-2 mb-2">
-                <div
-                  className="bg-gradient-to-r from-cyan-400 to-purple-400 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(status.phase3Progress, 100)}%` }}
-                ></div>
-              </div>
-              <div className="text-sm text-gray-400">
-                {status.phase3Progress.toFixed(1)}% • {status.failedMethods} failed
-              </div>
-            </div>
-
-            {/* Phase 4: Class Deobfuscation */}
-            <div className="bg-slate-900/50 rounded-lg p-4 border border-orange-500/20">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-400">Phase 4: Classes</span>
-                <span className="text-xs bg-orange-600/30 px-2 py-0.5 rounded text-orange-300">
-                  {status.currentPhase.includes('PHASE4_CLASSES') ? 'Processing' : 'Waiting'}
-                </span>
-              </div>
-              <div className="text-2xl font-bold mb-1">
-                {status.processedClasses ?? 0} processed
-              </div>
-              <div className="text-sm text-gray-400 mb-2">
-                Total: {status.totalClasses.toLocaleString()} classes
-              </div>
-              <div className="w-full bg-slate-700 rounded-full h-2 mb-2">
-                <div
-                  className="bg-gradient-to-r from-orange-400 to-red-400 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(status.phase4Progress, 100)}%` }}
-                ></div>
-              </div>
-              <div className="text-sm text-gray-400">
-                {status.phase4Progress.toFixed(1)}% complete
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Workflow Visualization */}
       <div className="mb-8">
         <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
