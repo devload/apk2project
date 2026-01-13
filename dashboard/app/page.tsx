@@ -57,6 +57,7 @@ interface ProgressStatus {
   batchSize: number;
   recentRenames: RenameEntry[];
   recentLlmRequests?: LlmRequestEntry[];
+  failedRequests?: LlmRequestEntry[];  // 실패한 요청만 (그룹화됨)
   resourceHistory: ResourceSnapshot[];
   cpuUsagePercent: number;
   memoryUsedMb: number;
@@ -86,6 +87,7 @@ interface LlmRequestEntry {
   response: string;
   durationMs: number;
   success: boolean;
+  iteration: number;  // 몇 번째 시도인지
   timestamp: number;
 }
 
@@ -104,6 +106,8 @@ interface RenameEntry {
   localVariableRenames?: Record<string, string>;  // 로컬 변수 리네임
   referencesUpdated?: number;  // 참조 업데이트 개수
   updatedFiles?: string[];  // 참조 업데이트된 파일 경로 목록
+  iteration: number;  // 몇 번째 시도에서 성공했는지
+  retryCount: number;  // 몇 번 retry 했는지
   timestamp: number;
 }
 
@@ -309,9 +313,9 @@ export default function Dashboard() {
               >
                 <span>❌</span>
                 Failed Requests
-                {status.recentLlmRequests && (
+                {status.failedRequests && (
                   <span className="text-xs bg-red-900/50 px-2 py-0.5 rounded">
-                    {status.recentLlmRequests.filter(r => !r.success).length}
+                    {status.failedRequests.length}
                   </span>
                 )}
               </button>
@@ -385,17 +389,13 @@ export default function Dashboard() {
           )}
 
           {/* Tab Content: Failed Requests */}
-          {activeTab === 'failed' && status.recentLlmRequests && status.recentLlmRequests.length > 0 && (
+          {activeTab === 'failed' && status.failedRequests && status.failedRequests.length > 0 && (
             <>
-              {status.recentLlmRequests.filter(r => !r.success).length > 0 ? (
+              {status.failedRequests.length > 0 ? (
                 <div className="space-y-3">
-                  {status.recentLlmRequests
-                    .filter(r => !r.success)
-                    .slice()
-                    .reverse()
-                    .map((request, index) => (
-                      <FailedRequestCard key={index} request={request} />
-                    ))}
+                  {status.failedRequests.map((request, index) => (
+                    <FailedRequestCard key={index} request={request} />
+                  ))}
                 </div>
               ) : (
                 <div className="text-center py-8 text-gray-400">
@@ -449,6 +449,9 @@ function FailedRequestCard({ request }: { request: LlmRequestEntry }) {
           <div className="flex items-center gap-2 mb-1">
             <span className="text-lg">❌</span>
             <span className="font-mono text-sm text-red-300">{request.methodName}</span>
+            <span className="text-xs bg-orange-600/30 px-2 py-0.5 rounded text-orange-300">
+              🔄 iter={request.iteration}
+            </span>
             <span className="text-xs bg-red-600/30 px-2 py-0.5 rounded text-red-300">
               {request.requestType}
             </span>
@@ -543,11 +546,16 @@ function RenameCard({ rename }: { rename: RenameEntry }) {
       )}
 
       {/* Method Rename */}
-      <div className="mb-2 flex items-center gap-2">
+      <div className="mb-2 flex items-center gap-2 flex-wrap">
         <span className="text-xs text-gray-400">🔧 Method:</span>
         <span className="font-mono text-red-300">{rename.original}</span>
         <span className="text-gray-500">→</span>
         <span className="font-mono text-green-300 font-semibold">{rename.suggested}</span>
+        {rename.retryCount > 0 && (
+          <span className="text-xs bg-purple-600/30 px-2 py-0.5 rounded text-purple-300 ml-2">
+            🔄 iter={rename.iteration} (retry {rename.retryCount}x)
+          </span>
+        )}
       </div>
 
       {/* Code Diff */}

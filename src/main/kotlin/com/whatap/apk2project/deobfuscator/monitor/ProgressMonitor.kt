@@ -48,6 +48,9 @@ class ProgressMonitor(
     private val recentLlmRequests = ConcurrentLinkedQueue<LlmRequestEntry>()
     private val maxRecentLlmRequests = 30
 
+    // 실패한 요청 관리 (methodName -> 실패 목록)
+    private val failedRequests = ConcurrentHashMap<String, MutableList<LlmRequestEntry>>()
+
     // 시스템 리소스 히스토리 (최대 100개, 약 5분간 데이터)
     private val resourceHistory = ConcurrentLinkedQueue<ResourceSnapshot>()
     private val maxResourceHistory = 100
@@ -174,7 +177,9 @@ class ProgressMonitor(
         sourceCodeAfter: String = "",
         localVariableRenames: Map<String, String> = emptyMap(),
         referencesUpdated: Int = 0,
-        updatedFiles: List<String> = emptyList()
+        updatedFiles: List<String> = emptyList(),
+        iteration: Int = 1,
+        retryCount: Int = 0
     ) {
         recentRenames.add(RenameEntry(
             type = type,
@@ -191,6 +196,8 @@ class ProgressMonitor(
             localVariableRenames = localVariableRenames,
             referencesUpdated = referencesUpdated,
             updatedFiles = updatedFiles.take(10).map { it.substringAfterLast("sources").removePrefix("\\").removePrefix("/") },
+            iteration = iteration,
+            retryCount = retryCount,
             timestamp = System.currentTimeMillis()
         ))
 
@@ -210,9 +217,10 @@ class ProgressMonitor(
         promptPreview: String,
         response: String,
         durationMs: Long,
-        success: Boolean
+        success: Boolean,
+        iteration: Int = 1
     ) {
-        recentLlmRequests.add(LlmRequestEntry(
+        val entry = LlmRequestEntry(
             methodName = methodName,
             requestType = requestType,
             model = model,
@@ -220,8 +228,19 @@ class ProgressMonitor(
             response = response.take(500),
             durationMs = durationMs,
             success = success,
+            iteration = iteration,
             timestamp = System.currentTimeMillis()
-        ))
+        )
+
+        recentLlmRequests.add(entry)
+
+        // 실패한 요청 별도 관리
+        if (!success) {
+            failedRequests.computeIfAbsent(methodName) { mutableListOf() }.add(entry)
+        } else {
+            // 성공하면 해당 메서드의 모든 실패 기록 제거
+            failedRequests.remove(methodName)
+        }
 
         // 최대 개수 유지
         while (recentLlmRequests.size > maxRecentLlmRequests) {
@@ -419,6 +438,7 @@ class ProgressMonitor(
             batchSize = batchSize,
             recentRenames = recentRenames.toList().reversed(),
             recentLlmRequests = recentLlmRequests.toList().reversed(),
+            failedRequests = failedRequests.values.flatten().sortedByDescending { it.timestamp },
             resourceHistory = resourceHistory.toList(),
             cpuUsagePercent = cpuUsage,
             memoryUsedMb = memoryUsed,
@@ -569,6 +589,7 @@ data class ProgressStatus(
     val batchSize: Int,
     val recentRenames: List<RenameEntry>,
     val recentLlmRequests: List<LlmRequestEntry>,
+    val failedRequests: List<LlmRequestEntry> = emptyList(),  // 실패한 요청만 (그룹화됨)
     val resourceHistory: List<ResourceSnapshot>,
     // System resources
     val cpuUsagePercent: Double,
@@ -597,6 +618,8 @@ data class RenameEntry(
     val localVariableRenames: Map<String, String> = emptyMap(),  // 로컬 변수 리네임 (원본명 → 새이름)
     val referencesUpdated: Int = 0,  // 참조 업데이트 개수
     val updatedFiles: List<String> = emptyList(),  // 참조 업데이트된 파일 경로 목록
+    val iteration: Int = 1,         // 몇 번째 시도에서 성공했는지
+    val retryCount: Int = 0,        // 몇 번 retry 했는지 (iteration - 1)
     val timestamp: Long
 )
 
@@ -608,6 +631,7 @@ data class LlmRequestEntry(
     val response: String,           // 응답 (JSON)
     val durationMs: Long,           // 소요 시간
     val success: Boolean,           // 성공 여부
+    val iteration: Int = 1,         // 몇 번째 시도인지
     val timestamp: Long
 )
 

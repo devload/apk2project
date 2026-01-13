@@ -159,12 +159,13 @@ class OllamaClient(
                 // Always log the request (both success and failure)
                 monitor?.addLlmRequest(
                     methodName = targetName,
-                    requestType = "$requestType (iter=$currentIteration)",
+                    requestType = requestType,
                     model = modelName,
                     promptPreview = prompt.take(200),
                     response = response.take(500),
                     durationMs = duration,
-                    success = success
+                    success = success,
+                    iteration = currentIteration
                 )
 
                 if (success) {
