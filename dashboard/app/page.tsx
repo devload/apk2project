@@ -15,6 +15,7 @@ interface ProgressStatus {
   totalMethods: number;
   leafMethods: number;
   processedMethods: number;
+  processedClasses: number;
   renamedMethods: number;
   failedMethods: number;
   currentIteration: number;
@@ -193,15 +194,15 @@ export default function Dashboard() {
         />
         <StatusCard
           title="Methods (P3)"
-          value={`${status.processedMethods} / ${status.leafMethods}`}
-          subtitle={`${status.phase3Progress.toFixed(1)}%`}
+          value={`${status.processedMethods} processed`}
+          subtitle={`Total: ${status.leafMethods} • ${status.phase3Progress.toFixed(1)}%`}
           icon="🎯"
           progress={status.phase3Progress}
         />
         <StatusCard
           title="Classes (P4)"
-          value={status.totalClasses.toString()}
-          subtitle={`${status.phase4Progress.toFixed(1)}%`}
+          value={`${status.processedClasses} processed`}
+          subtitle={`Total: ${status.totalClasses} • ${status.phase4Progress.toFixed(1)}%`}
           icon="🏗️"
           progress={status.phase4Progress}
         />
@@ -235,7 +236,10 @@ export default function Dashboard() {
                 </span>
               </div>
               <div className="text-2xl font-bold mb-1">
-                {status.processedMethods} / {status.leafMethods}
+                {status.processedMethods} processed
+              </div>
+              <div className="text-sm text-gray-400 mb-2">
+                Total: {status.leafMethods} methods
               </div>
               <div className="w-full bg-slate-700 rounded-full h-2 mb-2">
                 <div
@@ -257,7 +261,10 @@ export default function Dashboard() {
                 </span>
               </div>
               <div className="text-2xl font-bold mb-1">
-                {status.totalClasses.toLocaleString()} classes
+                {status.processedClasses} processed
+              </div>
+              <div className="text-sm text-gray-400 mb-2">
+                Total: {status.totalClasses.toLocaleString()} classes
               </div>
               <div className="w-full bg-slate-700 rounded-full h-2 mb-2">
                 <div
