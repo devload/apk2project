@@ -126,7 +126,7 @@ export default function WorkflowGraph({
       nodes.push({
         id: 'source',
         type: 'input',
-        data: { label: '📁 소스 파일' },
+        data: { label: '📁 Source Files' },
         position: { x: centerX, y: 50 },
         sourcePosition: Position.Bottom,
         style: getNodeStyle(currentPhase.includes('PHASE1_FILE_PARSING') ? 'processing' : 'completed'),
@@ -135,10 +135,10 @@ export default function WorkflowGraph({
       // 2. Phase 1: File Parsing
       const isPhase1Active = currentPhase.includes('PHASE1_FILE_PARSING');
       const parseLabel = isPhase1Active
-        ? `📝 파일 파싱\n파일: ${parsedFiles}/${totalFilesToParse}\n진행: ${phase1Progress.toFixed(1)}%`
+        ? `📝 Parse Files\nFiles: ${parsedFiles}/${totalFilesToParse}\nProgress: ${phase1Progress.toFixed(1)}%`
         : parsedFiles > 0
-        ? `📝 파일 파싱\n${parsedFiles}개 파일\n✓ ${phase1Progress.toFixed(0)}%`
-        : '📝 파일 파싱\n대기 중...';
+        ? `📝 Parse Files\n${parsedFiles} files\n✓ ${phase1Progress.toFixed(0)}%`
+        : '📝 Parse Files\nWaiting...';
 
       nodes.push({
         id: 'parse',
@@ -152,10 +152,10 @@ export default function WorkflowGraph({
       // 3. Phase 2: Call Graph Building
       const isPhase2Active = currentPhase.includes('PHASE2_CALL_GRAPH');
       const graphLabel = isPhase2Active
-        ? `🔗 Call Graph\n클래스: ${callGraphClasses}/${totalCallGraphClasses}\n호출: ${callGraphEdges}개\n진행: ${phase2Progress.toFixed(1)}%`
+        ? `🔗 Call Graph\nClasses: ${callGraphClasses}/${totalCallGraphClasses}\nEdges: ${callGraphEdges}\nProgress: ${phase2Progress.toFixed(1)}%`
         : callGraphEdges > 0
-        ? `🔗 Call Graph\n클래스 ${totalClasses}개\n호출 ${callGraphEdges}개\n✓ ${phase2Progress.toFixed(0)}%`
-        : '🔗 Call Graph\n대기 중...';
+        ? `🔗 Call Graph\n${totalClasses} classes\n${callGraphEdges} edges\n✓ ${phase2Progress.toFixed(0)}%`
+        : '🔗 Call Graph\nWaiting...';
 
       nodes.push({
         id: 'graph',
@@ -166,13 +166,13 @@ export default function WorkflowGraph({
         style: getNodeStyle(isPhase2Active ? 'processing' : phase2Progress > 0 ? 'completed' : 'pending'),
       });
 
-      // 4. Leaf Methods (말단 메서드 - 다른 메서드를 호출하지 않는 메서드)
+      // 4. Leaf Methods (methods that don't call other methods)
       const isPhase4Active = currentPhase.includes('PHASE3_AI_ANALYSIS');
       const leafLabel = isPhase4Active
-        ? `🎯 말단 메서드 분석\n${processedMethods}/${leafMethods}개\n진행: ${phase3Progress.toFixed(1)}%`
+        ? `🎯 Leaf Methods\n${processedMethods}/${leafMethods}\nProgress: ${phase3Progress.toFixed(1)}%`
         : leafMethods > 0
-        ? `🎯 말단 메서드 분석\n${leafMethods}개 발견\n✓ ${phase3Progress.toFixed(0)}%`
-        : `🎯 말단 메서드 분석\n대기 중...`;
+        ? `🎯 Leaf Methods\n${leafMethods} found\n✓ ${phase3Progress.toFixed(0)}%`
+        : `🎯 Leaf Methods\nWaiting...`;
 
       nodes.push({
         id: 'leaf',
@@ -189,8 +189,8 @@ export default function WorkflowGraph({
 
       // 5a. DeepSeek Queue
       const deepseekQueueLabel = deepseekQueueSize > 0
-        ? `📦 DeepSeek 대기열\n${deepseekQueueSize}개 대기 중`
-        : `📦 DeepSeek 대기열\n비어있음`;
+        ? `📦 DeepSeek Queue\n${deepseekQueueSize} waiting`
+        : `📦 DeepSeek Queue\nEmpty`;
 
       nodes.push({
         id: 'deepseek-queue',
@@ -235,8 +235,8 @@ export default function WorkflowGraph({
       // 6a. Qwen Queue (only if Korean translation is enabled)
       if (qwenQueueSize !== null) {
         const qwenQueueLabel = qwenQueueSize > 0
-          ? `📦 Qwen 대기열\n${qwenQueueSize}개 대기 중`
-          : `📦 Qwen 대기열\n비어있음`;
+          ? `📦 Qwen Queue\n${qwenQueueSize} waiting`
+          : `📦 Qwen Queue\nEmpty`;
 
         nodes.push({
           id: 'qwen-queue',
@@ -276,8 +276,8 @@ export default function WorkflowGraph({
 
       // 7a. Rename Queue
       const renameQueueLabel = renameQueueSize > 0
-        ? `📦 이름 변경 대기열\n${renameQueueSize}개 대기 중`
-        : `📦 이름 변경 대기열\n비어있음`;
+        ? `📦 Rename Queue\n${renameQueueSize} waiting`
+        : `📦 Rename Queue\nEmpty`;
 
       nodes.push({
         id: 'rename-queue',
@@ -293,8 +293,8 @@ export default function WorkflowGraph({
         ? ((renamedMethods / processedMethods) * 100).toFixed(1)
         : '0.0';
       const renamedLabel = renamedMethods > 0
-        ? `✨ 이름 변경 완료\n${renamedMethods}개 메서드\n성공: ${successRate}%${failedMethods > 0 ? `\n실패: ${failedMethods}개` : ''}`
-        : '✨ 이름 변경 완료\n대기 중...';
+        ? `✨ Rename Complete\n${renamedMethods} methods\nSuccess: ${successRate}%${failedMethods > 0 ? `\nFailed: ${failedMethods}` : ''}`
+        : '✨ Rename Complete\nWaiting...';
 
       nodes.push({
         id: 'renamed',
@@ -309,8 +309,8 @@ export default function WorkflowGraph({
 
       // 7a. Phase 4 Queues - Class DeepSeek Queue
       const classDeepseekQueueLabel = classDeepseekQueueSize > 0
-        ? `📦 클래스 DS 대기열\n${classDeepseekQueueSize}개 대기 중`
-        : `📦 클래스 DS 대기열\n비어있음`;
+        ? `📦 Class DS Queue\n${classDeepseekQueueSize} waiting`
+        : `📦 Class DS Queue\nEmpty`;
 
       nodes.push({
         id: 'class-deepseek-queue',
@@ -323,8 +323,8 @@ export default function WorkflowGraph({
 
       // 7b. Phase 4 Queues - Class Qwen Queue
       const classQwenQueueLabel = classQwenQueueSize !== null && classQwenQueueSize > 0
-        ? `📦 클래스 Qwen 대기열\n${classQwenQueueSize}개 대기 중`
-        : `📦 클래스 Qwen 대기열\n비어있음`;
+        ? `📦 Class Qwen Queue\n${classQwenQueueSize} waiting`
+        : `📦 Class Qwen Queue\nEmpty`;
 
       nodes.push({
         id: 'class-qwen-queue',
@@ -337,8 +337,8 @@ export default function WorkflowGraph({
 
       // 7c. Phase 4 Queues - Class Rename Queue
       const classRenameQueueLabel = classRenameQueueSize > 0
-        ? `📦 클래스 이름 변경 대기열\n${classRenameQueueSize}개 대기 중`
-        : `📦 클래스 이름 변경 대기열\n비어있음`;
+        ? `📦 Class Rename Queue\n${classRenameQueueSize} waiting`
+        : `📦 Class Rename Queue\nEmpty`;
 
       nodes.push({
         id: 'class-rename-queue',
@@ -522,8 +522,8 @@ export default function WorkflowGraph({
         ? ((renamedMethods / processedMethods) * 100).toFixed(1)
         : '0.0';
       const renamedLabel = renamedMethods > 0
-        ? `✨ 이름 변경 완료\n${renamedMethods}개 메서드\n${successRate}% 성공${failedMethods > 0 ? `\n${failedMethods}개 실패` : ''}`
-        : '✨ 이름 변경 완료\n대기 중...';
+        ? `✨ Rename Complete\n${renamedMethods} methods\n${successRate}% success${failedMethods > 0 ? `\n${failedMethods} failed` : ''}`
+        : '✨ Rename Complete\nWaiting...';
 
       // Qwen이 없으면 Renamed를 더 가까이 배치 (DeepSeek 바로 다음)
       const renamedX = qwenQueueSize !== null ? 1590 : 1370;
@@ -543,10 +543,10 @@ export default function WorkflowGraph({
       const isPhase4ClassActive = currentPhase.includes('PHASE4_CLASSES');
       const classQueueTotal = classDeepseekQueueSize + (classQwenQueueSize ?? 0) + classRenameQueueSize;
       const classLabel = isPhase4ClassActive
-        ? `🏗️ 클래스 이름 변경\n진행 중...\n${classQueueTotal > 0 ? `대기열: ${classQueueTotal}개` : ''}`
+        ? `🏗️ Classes\nRenaming...\n${classQueueTotal > 0 ? `Queue: ${classQueueTotal}` : ''}`
         : currentPhase === 'COMPLETE' || currentPhase.includes('PHASE5')
-        ? `🏗️ 클래스\n이름 변경 완료 ✓`
-        : `🏗️ 클래스\n대기 중...`;
+        ? `🏗️ Classes\nRenamed ✓`
+        : `🏗️ Classes\nWaiting...`;
 
       // Phase 4도 Qwen이 없으면 위치 조정
       const phase4X = qwenQueueSize !== null ? 1810 : 1590;
@@ -766,10 +766,10 @@ export default function WorkflowGraph({
       <div className="absolute top-4 right-4 z-10">
         <button
           onClick={() => setIsVertical(!isVertical)}
-          className="px-4 py-2 bg-purple-600/80 hover:bg-purple-500 text-white rounded-lg transition-colors duration-200 font-semibold text-sm border border-purple-400/30 shadow-lg"
-          title={isVertical ? "가로 레이아웃으로 전환" : "세로 레이아웃으로 전환"}
+          className="w-12 h-12 flex items-center justify-center bg-purple-600/80 hover:bg-purple-500 text-white rounded-lg transition-colors duration-200 text-2xl border border-purple-400/30 shadow-lg"
+          title={isVertical ? "Switch to horizontal layout" : "Switch to vertical layout"}
         >
-          {isVertical ? '↔️ 가로' : '↕️ 세로'}
+          {isVertical ? '↔️' : '↕️'}
         </button>
       </div>
 
