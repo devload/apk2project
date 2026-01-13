@@ -72,6 +72,11 @@ class OllamaClient(
 
     /**
      * 단일 메소드 분석 (retry 포함)
+     *
+     * 전략:
+     * 1. iteration=1: 기본 프롬프트 (단일 메서드만)
+     * 2. iteration=2: 클래스 컨텍스트 포함 (즉시 RETRY)
+     * 3. iteration=3+: 이전 방식으로 큐에 넣고 나중에 재시도
      */
     override fun analyzeMethod(
         method: MethodNode,
@@ -79,48 +84,113 @@ class OllamaClient(
         iteration: Int = 1,
         classSourceCode: String = ""
     ): MethodAnalysisResult? {
-        // ITERATE 1: 기본 프롬프트
-        // RETRY (iteration >= 2): 클래스 컨텍스트 포함
-        val prompt = if (iteration >= 2 && classSourceCode.isNotEmpty()) {
-            buildEnhancedPromptWithClassContext(method, sourceCode, classSourceCode)
-        } else {
-            buildCompactPrompt(method, sourceCode)
-        }
-
         return executeWithRetry(
             targetName = method.methodName,
-            requestType = "analysis"
-        ) { _ ->
-            val startTime = System.currentTimeMillis()
-            val response = callOllama(prompt)
-            val duration = System.currentTimeMillis() - startTime
+            requestType = "analysis",
+            initialIteration = iteration,
+            method = method,
+            sourceCode = sourceCode,
+            classSourceCode = classSourceCode
+        )
+    }
 
-            val result = parseMethodAnalysis(response, method)
+    /**
+     * 제네릭 재시도 함수 (iteration 증가 지원)
+     *
+     * @param targetName 분석 대상 이름 (메서드/클래스/패키지)
+     * @param requestType 요청 타입 ("analysis", "class_analysis", "package_analysis")
+     * @param initialIteration 초기 ITERATION 번호
+     * @param method 메서드 노드
+     * @param sourceCode 메서드 소스 코드
+     * @param classSourceCode 클래스 컨텍스트 소스
+     * @return 성공 시 결과, 실패 시 null
+     */
+    private fun executeWithRetry(
+        targetName: String,
+        requestType: String,
+        initialIteration: Int = 1,
+        method: MethodNode? = null,
+        sourceCode: String? = null,
+        classSourceCode: String = ""
+    ): MethodAnalysisResult? {
+        var result: MethodAnalysisResult? = null
+        var currentIteration = initialIteration
+        var classSource = classSourceCode  // 초기 클래스 소스
 
-            // 성공 조건: result가 null이 아니고 suggestedName이 원본과 다름
-            val success = result != null && result.suggestedName != method.methodName
-
-            // Always log the request (both success and failure)
-            monitor?.addLlmRequest(
-                methodName = method.methodName,
-                requestType = "analysis",
-                model = modelName,
-                promptPreview = prompt.take(200),
-                response = response.take(500),
-                durationMs = duration,
-                success = success
-            )
-
-            if (success) {
-                result
-            } else {
-                when {
-                    result == null -> logger.warn("Attempt failed: Parse failed for ${method.methodName}, retrying...")
-                    result.suggestedName == method.methodName -> logger.warn("Attempt failed: Method name unchanged (${method.methodName}), retrying...")
+        repeat(maxRetries) { attempt ->
+            try {
+                // ITERATION에 따른 프롬프트 선택
+                // iteration=2이면 자동으로 클래스 소스 로드 시도
+                val prompt = if (method != null && sourceCode != null) {
+                    when {
+                        currentIteration >= 2 && classSource.isEmpty() && method.file != null -> {
+                            // 클래스 소스를 아직 읽지 않았음 → 읽기 시도
+                            logger.info("Iteration $currentIteration: Loading class context for retry...")
+                            classSource = method.file.readText().take(3000)  // 최대 3000자
+                            buildEnhancedPromptWithClassContext(method, sourceCode, classSource)
+                        }
+                        currentIteration >= 2 && classSource.isNotEmpty() ->
+                            buildEnhancedPromptWithClassContext(method, sourceCode, classSource)
+                        else ->
+                            buildCompactPrompt(method, sourceCode)
+                    }
+                } else {
+                    // 클래스/패키지 분석용 프롬프트
+                    when (requestType) {
+                        "class_analysis" -> buildClassAnalysisPrompt(targetName, emptyList()) // TODO: 실제 메서드名 전달
+                        "package_analysis" -> buildPackageAnalysisPrompt(targetName, emptyList(), "")
+                        else -> ""
+                    }
                 }
-                null
+
+                val startTime = System.currentTimeMillis()
+                val response = callOllama(prompt)
+                val duration = System.currentTimeMillis() - startTime
+
+                result = if (method != null) {
+                    parseMethodAnalysis(response, method)
+                } else {
+                    null // TODO: 클래스/패키지 분석
+                }
+
+                // 성공 조건: result가 null이 아니고 suggestedName이 원본과 다름
+                val success = result != null && (method?.methodName == null || result.suggestedName != method.methodName)
+
+                // Always log the request (both success and failure)
+                monitor?.addLlmRequest(
+                    methodName = targetName,
+                    requestType = "$requestType (iter=$currentIteration)",
+                    model = modelName,
+                    promptPreview = prompt.take(200),
+                    response = response.take(500),
+                    durationMs = duration,
+                    success = success
+                )
+
+                if (success) {
+                    return@repeat  // 성공 시 반복 종료
+                } else {
+                    when {
+                        result == null -> logger.warn("Attempt ${attempt + 1}/$maxRetries (iter=$currentIteration): Parse failed for $targetName")
+                        method != null && result.suggestedName == method.methodName ->
+                            logger.warn("Attempt ${attempt + 1}/$maxRetries (iter=$currentIteration): Method name unchanged ($targetName)")
+                    }
+                    currentIteration++  // 다음 시도를 위해 iteration 증가
+                }
+            } catch (e: Exception) {
+                logger.error("Attempt ${attempt + 1}/$maxRetries (iter=$currentIteration): Exception during $requestType for $targetName: ${e.message}")
+                currentIteration++
+            }
+
+            // 마지막 시도가 아니면 대기
+            if (attempt < maxRetries - 1) {
+                Thread.sleep(retryDelayMs)
             }
         }
+
+        // 모든 재시도 실패
+        logger.error("Failed to $requestType $targetName after $maxRetries attempts (final iteration=$currentIteration)")
+        return null
     }
 
     /**
