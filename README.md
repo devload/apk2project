@@ -1,27 +1,27 @@
 # APK2Project
 
-Android APK 파일을 분석하여 빌드 가능한 Gradle 프로젝트로 복원하고, AI 기반 난독화 복호화를 제공하는 CLI 도구
+Android APK to Gradle Project Converter with AI-Powered Deobfuscation
 
-## 🎯 주요 기능
+## 🎯 Key Features
 
 ### PARSE 0: APK → Gradle Project
-- **APK 디컴파일**: DEX 파일을 Java 소스코드로 변환
-- **리소스 추출**: 레이아웃, 이미지, 문자열 등 모든 리소스 복원
-- **의존성 분석**: 사용된 라이브러리 자동 감지 (54개 라이브러리 시그니처 내장)
-- **프로젝트 생성**: 바로 빌드 가능한 Gradle 프로젝트 구조 생성
+- **APK Decompilation**: Convert DEX files to Java source code
+- **Resource Extraction**: Restore all resources (layouts, images, strings, etc.)
+- **Dependency Analysis**: Auto-detect used libraries (54 library signatures built-in)
+- **Project Generation**: Create buildable Gradle project structure
 
 ### AI Deobfuscation (PARSE 1-5)
-- **🤖 AI 기반 난독화 복호화**: Ollama, Claude API 지원
-- **📊 Call Graph 분석**: Bottom-up 방식으로 메서드 분석
-- **🎯 우선순위 처리**: 중요한 메서드 먼저 복호화
-- **⚡ 병렬 처리**: 다중 코어 활용으로 빠른 처리
-- **🌐 실시간 모니터링**: Next.js Dashboard로 진행 상황 추적
+- **🤖 AI-Powered Deobfuscation**: Ollama, Claude API support
+- **📊 Call Graph Analysis**: Bottom-up method analysis
+- **🎯 Priority Processing**: Analyze important methods first
+- **⚡ Parallel Processing**: Multi-core utilization for speed
+- **🌐 Real-time Monitoring**: Track progress with Next.js Dashboard
 
-## 📋 시스템 요구사항
+## 📋 System Requirements
 
-### 필수 설치
+### Required
 
-1. **JDK 17 이상**
+1. **JDK 17+**
    ```bash
    # macOS
    brew install openjdk@17
@@ -30,18 +30,18 @@ Android APK 파일을 분석하여 빌드 가능한 Gradle 프로젝트로 복�
    sudo apt install openjdk-17-jdk
    ```
 
-2. **JADX** (DEX 디컴파일러)
+2. **JADX** (DEX decompiler)
    ```bash
    # macOS
    brew install jadx
 
-   # Linux - 수동 설치
+   # Linux - manual install
    wget https://github.com/skylot/jadx/releases/download/v1.5.0/jadx-1.5.0.zip
    unzip jadx-1.5.0.zip -d /opt/jadx
    export PATH=$PATH:/opt/jadx/bin
    ```
 
-3. **APKTool** (리소스 추출)
+3. **APKTool** (resource extractor)
    ```bash
    # macOS
    brew install apktool
@@ -53,16 +53,16 @@ Android APK 파일을 분석하여 빌드 가능한 Gradle 프로젝트로 복�
    mv apktool apktool_2.9.3.jar /usr/local/bin/
    ```
 
-### 선택 사항 (AI Deobfuscation용)
+### Optional (for AI Deobfuscation)
 
-4. **Ollama** (로컬 AI 서버)
+4. **Ollama** (local AI server)
    ```bash
    # macOS/Linux
    curl https://ollama.ai/install.sh | sh
 
-   # 모델 다운로드
+   # Download models
    ollama pull deepseek-coder:6.7b
-   ollama pull qwen2.5  # 한글 번역용
+   ollama pull qwen2.5  # For Korean translation
    ```
 
 5. **Node.js 20+** (Dashboard)
@@ -74,137 +74,137 @@ Android APK 파일을 분석하여 빌드 가능한 Gradle 프로젝트로 복�
    sudo apt install nodejs npm
    ```
 
-## 🔧 설치 방법
+## 🔧 Installation
 
 ```bash
-# 1. 프로젝트 클론
+# 1. Clone project
 git clone https://github.com/devload/apk2project.git
 cd apk2project
 
-# 2. CLI 빌드
+# 2. Build CLI
 ./gradlew build
 
-# 3. Dashboard 설치
+# 3. Install Dashboard
 cd dashboard
 npm install
 cd ..
 ```
 
-## ⚙️ 설정 (output.properties)
+## ⚙️ Configuration (output.properties)
 
-프로젝트 루트의 `output.properties` 파일로 설정을 관리합니다.
+Configure settings via `output.properties` in project root.
 
 ```properties
 # APK2Project Configuration
 
-# 출력 디렉토리 (상대 경로 또는 절대 경로)
+# Output directory (relative or absolute path)
 # Example: output.dir=generate_project
 output.dir=generate_project
 
-# Dashboard 포트
+# Dashboard port
 # Example: dashboard.port=3000
 dashboard.port=3000
 
-# Ollama 서버
+# Ollama server
 # Example: ollama.baseUrl=http://localhost:11434
 ollama.baseUrl=http://localhost:11434
 ```
 
-**설정 방법**:
-1. `output.properties` 파일의 주석(#)을 제거
-2. 원하는 값 입력
-3. 저장 후 파이프라인 재시작
+**Setup Instructions**:
+1. Uncomment lines in `output.properties` by removing `#`
+2. Enter your desired values
+3. Save and restart pipeline
 
-**참고**: `output.properties`는 Git에 템플릿 형태로 커밋되므로, 프로젝트별로 설정 필요
+**Note**: `output.properties` is committed to Git as a template. Configure per project.
 
-## 📚 사용 방법
+## 📚 Usage
 
-### 1. APK 파일 준비
+### 1. Prepare APK File
 
-#### Android 기기에서 APK 추출
+#### Extract APK from Android Device
 
 ```bash
-# 1. 패키지 이름 확인
-adb shell pm list packages | grep <앱이름>
+# 1. Find package name
+adb shell pm list packages | grep <appname>
 
-# 2. APK 경로 확인
-adb shell pm path <패키지이름>
-# 예: adb shell pm path com.example.myapp
+# 2. Find APK path
+adb shell pm path <packagename>
+# Example: adb shell pm path com.example.myapp
 
-# 3. APK 추출
-adb pull <APK경로> ./
-# 예: adb pull /data/app/~~abc123==/com.example.myapp-xyz==/base.apk ./myapp.apk
+# 3. Pull APK
+adb pull <apkpath> ./
+# Example: adb pull /data/app/~~abc123==/com.example.myapp-xyz==/base.apk ./myapp.apk
 ```
 
-### 2. 명령어
+### 2. Commands
 
-#### `generate` - 프로젝트 생성 (권장)
+#### `generate` - Project Generation (Recommended)
 
-APK를 분석하고 완전한 Gradle 프로젝트를 생성합니다.
+Analyze APK and generate complete Gradle project.
 
 ```bash
-# 기본 사용법 (PARSE 0만)
-./gradlew run --args="generate <APK파일> -o <출력디렉토리>"
+# Basic usage (PARSE 0 only)
+./gradlew run --args="generate <APKFILE> -o <OUTPUTDIR>"
 
-# AI 난독화 복호화 활성화
-./gradlew run --args="generate <APK파일> -o <출력디렉토리> --ai"
+# Enable AI deobfuscation
+./gradlew run --args="generate <APKFILE> -o <OUTPUTDIR> --ai"
 
-# 예시
+# Example
 ./gradlew run --args="generate ./sample.apk -o ./output/sample_project"
 
-# AI + 한글 번역
+# AI + Korean translation
 ./gradlew run --args="generate ./sample.apk -o ./output --ai --korean"
 ```
 
-**옵션**:
-- `-o, --output <DIR>`: 출력 디렉토리 (기본: `./<앱이름>_project`)
-- `--ai`: AI 난독화 복호화 활성화
-- `--ai-client <ollama|claude|codex>`: AI 클라이언트 선택 (기본: ollama)
-- `--model <MODEL>`: AI 모델명 (기본: deepseek-coder:6.7b)
-- `--korean`: 한글 번역 활성화
-- `--translation-model <MODEL>`: 번역 모델 (기본: qwen2.5)
-- `--batch-size <N>`: 배치 크기 (기본: 10)
-- `-v, --verbose`: 상세 로그 출력
+**Options**:
+- `-o, --output <DIR>`: Output directory (default: `./<appname>_project`)
+- `--ai`: Enable AI deobfuscation
+- `--ai-client <ollama|claude|codex>`: AI client selection (default: ollama)
+- `--model <MODEL>`: AI model name (default: deepseek-coder:6.7b)
+- `--korean`: Enable Korean translation
+- `--translation-model <MODEL>`: Translation model (default: qwen2.5)
+- `--batch-size <N>`: Batch size (default: 10)
+- `-v, --verbose`: Verbose logging
 
-**출력 구조**:
+**Output Structure**:
 ```
 output/sample_project/
 ├── app/
-│   ├── build.gradle          # 자동 생성된 빌드 설정
+│   ├── build.gradle          # Auto-generated build config
 │   ├── proguard-rules.pro
 │   └── src/
 │       └── main/
 │           ├── AndroidManifest.xml
-│           ├── java/         # 디컴파일된 Java 소스
-│           ├── res/          # 리소스 파일
-│           └── assets/       # 에셋 파일
+│           ├── java/         # Decompiled Java sources
+│           ├── res/          # Resource files
+│           └── assets/       # Asset files
 ├── .apk2project/
-│   ├── status.json           # 진행 상황 (Dashboard용)
-│   ├── dashboard.html        # 레거시 대시보드
-│   └── cache/                # AI 캐시
-├── build.gradle              # 루트 빌드 파일
+│   ├── status.json           # Progress (for Dashboard)
+│   ├── dashboard.html        # Legacy dashboard
+│   └── cache/                # AI cache
+├── build.gradle              # Root build file
 ├── settings.gradle
 ├── gradle.properties
 ├── gradle/wrapper/           # Gradle Wrapper
-└── README.md                 # 생성된 프로젝트 정보
+└── README.md                 # Generated project info
 ```
 
-#### `analyze` - 의존성 분석
+#### `analyze` - Dependency Analysis
 
-APK의 사용된 라이브러리를 분석합니다.
+Analyze libraries used in APK.
 
 ```bash
-# 기본 사용법
-./gradlew run --args="analyze <APK파일>"
+# Basic usage
+./gradlew run --args="analyze <APKFILE>"
 
-# 모든 의존성 표시 (낮은 신뢰도 포함)
+# Show all dependencies (including low confidence)
 ./gradlew run --args="analyze ./sample.apk --all"
 
-# 상세 로그
+# Verbose logging
 ./gradlew run --args="analyze ./sample.apk -v"
 ```
 
-**출력 예시**:
+**Output Example**:
 ```
 ═══════════════════════════════════════
   APK Information
@@ -225,185 +225,185 @@ APK의 사용된 라이브러리를 분석합니다.
   ...
 ```
 
-#### `decompile` - 디컴파일만 수행
+#### `decompile` - Decompile Only
 
-APK를 디컴파일하여 소스 코드만 추출합니다.
+Decompile APK and extract source code only.
 
 ```bash
-./gradlew run --args="decompile <APK파일> -o <출력디렉토리>"
+./gradlew run --args="decompile <APKFILE> -o <OUTPUTDIR>"
 
-# 예시
+# Example
 ./gradlew run --args="decompile ./sample.apk -o ./decompiled"
 ```
 
-#### `verify` - 프로젝트 검증
+#### `verify` - Project Verification
 
-생성된 프로젝트의 빌드 가능성을 검증합니다.
+Verify buildability of generated project.
 
 ```bash
-./gradlew run --args="verify <프로젝트디렉토리>"
+./gradlew run --args="verify <PROJECTDIR>"
 
-# 예시
+# Example
 ./gradlew run --args="verify ./output/sample_project"
 ```
 
-**검증 항목**:
-- 프로젝트 구조 확인
-- build.gradle 파일 존재 여부
-- 소스 파일 존재 여부
-- 리소스 파일 존재 여부
+**Verification Items**:
+- Project structure check
+- build.gradle file existence
+- Source file existence
+- Resource file existence
 
-## 🎛️ Dashboard 사용법
+## 🎛️ Dashboard Usage
 
-실시간 파이프라인 진행 상황을 모니터링할 수 있습니다.
+Monitor pipeline progress in real-time.
 
-### 시작 방법
+### How to Start
 
 ```bash
-# Terminal 1: 파이프라인 실행
+# Terminal 1: Run pipeline
 ./gradlew run --args="generate ./sample.apk -o ./output --ai"
 
-# Terminal 2: Dashboard 시작
+# Terminal 2: Start Dashboard
 cd dashboard
 ./start-dashboard.sh
-# 또는
+# Or
 PORT=3000 npm run dev
 ```
 
-### Dashboard 접속
+### Access Dashboard
 
-브라우저에서 **http://localhost:3000** 접속
+Open browser at **http://localhost:3000**
 
-### Dashboard 기능
+### Dashboard Features
 
-1. **파이프라인 시각화**
-   - PARSE 0: APK → Gradle 변환 단계
-   - Phase 1-5: AI Deobfuscation 단계
-   - 실시간 진행률 표시
+1. **Pipeline Visualization**
+   - PARSE 0: APK → Gradle conversion stages
+   - Phase 1-5: AI Deobfuscation stages
+   - Real-time progress display
 
-2. **시스템 모니터링**
-   - CPU 사용률
-   - 메모리 사용량
-   - GPU 사용률 (Mac Apple Silicon)
+2. **System Monitoring**
+   - CPU usage
+   - Memory usage
+   - GPU usage (Mac Apple Silicon)
 
-3. **진행 상황**
-   - 처리된 파일/메서드 수
-   - 성공/실패 통계
-   - 예상 완료 시간
+3. **Progress Status**
+   - Files/methods processed
+   - Success/failure statistics
+   - Estimated completion time
 
-4. **최근 변경사항**
-   - 최근 rename 목록
-   - AI 요청 로그
+4. **Recent Changes**
+   - Recent rename list
+   - AI request logs
 
-### Dashboard 자동 포트 선택
+### Dashboard Auto Port Selection
 
-`start-dashboard.sh`는 `output.properties`에서 포트를 읽고, 해당 포트가 사용 중이면 자동으로 다음 포트를 시도:
+`start-dashboard.sh` reads port from `output.properties` and tries next ports if busy:
 
 ```bash
-# output.properties에 dashboard.port=3000 설정
+# dashboard.port=3000 in output.properties
 cd dashboard
 ./start-dashboard.sh
-# Port 3000이 사용 중이면 3001, 3002... 자동 시도
+# Tries 3001, 3002... automatically if port 3000 is busy
 ```
 
-## 🤖 AI Deobfuscation 상세
+## 🤖 AI Deobfuscation Details
 
-### 파이프라인 단계
+### Pipeline Stages
 
 **PARSE 0: APK → Gradle Project**
-1. AndroidManifest 파싱
-2. APK 디컴파일 (JADX)
-3. 리소스 추출 (APKTool)
-4. 의존성 분석
-5. Gradle 프로젝트 생성
+1. AndroidManifest parsing
+2. APK decompilation (JADX)
+3. Resource extraction (APKTool)
+4. Dependency analysis
+5. Gradle project generation
 
 **Phase 1: File Parsing**
-- 병렬 파일 파싱 (20 workers)
-- Java 파일에서 메서드/클래스 추출
+- Parallel file parsing (20 workers)
+- Extract methods/classes from Java files
 
-**Phase 2: Call Graph 구축**
-- 메서드 호출 관계 분석
-- Reverse Call Graph 생성
+**Phase 2: Call Graph Building**
+- Analyze method call relationships
+- Create reverse call graph
 
 **Phase 3: Method Deobfuscation**
-- Leaf method 우선 처리
-- AI 기반 이름 추론
-- 배치 처리 (병렬)
+- Process leaf methods first
+- AI-based name inference
+- Batch processing (parallel)
 
 **Phase 4: Class Deobfuscation**
-- 클래스 이름 복호화
-- 패키지 구조 재구성
+- Deobfuscate class names
+- Reconstruct package structure
 
-**Phase 5: Rename 적용**
-- 소스 코드에 rename 적용
-- 백업 생성
+**Phase 5: Apply Renames**
+- Apply renames to source code
+- Create backups
 
-### AI 모델 추천
+### AI Model Recommendations
 
-| 모델 | 크기 | 속도 | 품질 | 용도 |
-|------|------|------|------|------|
-| **deepseek-coder:6.7b** | 4.5GB | ⚡⚡⚡ | ⭐⭐⭐ | **추천** - 균형 |
-| deepseek-coder:33b | 20GB | ⚡ | ⭐⭐⭐⭐⭐ | 최고 품질 |
-| qwen2.5:7b | 4.5GB | ⚡⚡⚡ | ⭐⭐⭐ | 일반 코드 |
-| qwen2.5 | 4.7GB | ⚡⚡ | ⭐⭐ | 한글 번역용 |
+| Model | Size | Speed | Quality | Use Case |
+|------|------|------|---------|----------|
+| **deepseek-coder:6.7b** | 4.5GB | ⚡⚡⚡ | ⭐⭐⭐ | **Recommended** - Balanced |
+| deepseek-coder:33b | 20GB | ⚡ | ⭐⭐⭐⭐⭐ | Highest quality |
+| qwen2.5:7b | 4.5GB | ⚡⚡⚡ | ⭐⭐⭐ | General code |
+| qwen2.5 | 4.7GB | ⚡⚡ | ⭐⭐ | Korean translation |
 
-### 성능 최적화
+### Performance Optimization
 
 ```bash
-# 빠른 처리 (거대 모델 + 큰 배치)
+# Fast processing (smaller model + large batch)
 ./gradlew run --args="generate ./sample.apk -o ./output --ai --model deepseek-coder:6.7b --batch-size 50"
 
-# 최고 품질
+# Highest quality
 ./gradlew run --args="generate ./sample.apk -o ./output --ai --model deepseek-coder:33b --batch-size 10"
 
-# 한글 번역
+# Korean translation
 ./gradlew run --args="generate ./sample.apk -o ./output --ai --korean --translation-model qwen2.5"
 ```
 
-## 📊 테스트 결과 예시
+## 📊 Test Results
 
 ### PARSE 0 (APK → Gradle)
 
-| 항목 | 결과 |
-|------|------|
-| APK 크기 | ~150 MB |
-| DEX 파일 수 | 10개 (Multi-DEX) |
-| 디컴파일된 클래스 | ~35,000개 |
-| 성공률 | 95-99% |
-| 감지된 의존성 | ~50개 |
-| 처리 시간 | ~3분 |
+| Item | Result |
+|------|--------|
+| APK Size | ~150 MB |
+| DEX Files | ~10 (Multi-DEX) |
+| Decompiled Classes | ~35,000 |
+| Success Rate | 95-99% |
+| Detected Dependencies | ~50 |
+| Processing Time | ~3 minutes |
 
 ### AI Deobfuscation
 
-| 항목 | deepseek-coder:6.7b | deepseek-coder:33b |
+| Item | deepseek-coder:6.7b | deepseek-coder:33b |
 |------|---------------------|-------------------|
-| 처리 속도 | ~500 methods/min | ~150 methods/min |
-| 품질 | 좋음 | 최고 |
-| 메모리 | 6GB | 20GB |
-| GPU | 권장 | 필수 |
+| Processing Speed | ~500 methods/min | ~150 methods/min |
+| Quality | Good | Best |
+| Memory | 6GB | 20GB |
+| GPU | Recommended | Required |
 
-## 📦 감지 가능한 라이브러리 (54개)
+## 📦 Detectable Libraries (54)
 
 ### Android/Google
-- AndroidX (appcompat, core, fragment, recyclerview, constraintlayout 등)
+- AndroidX (appcompat, core, fragment, recyclerview, constraintlayout, etc.)
 - Google Play Services (auth, location, maps)
 - Firebase (analytics, messaging, crashlytics, auth)
 - Material Components
 
-### 네트워킹
+### Networking
 - OkHttp, Retrofit
 - Volley
 
-### 이미지
+### Image
 - Glide, Picasso
 - Coil
 
-### 데이터/직렬화
+### Data/Serialization
 - Gson, Moshi
 - Room, Realm
 - DataStore
 
-### 비동기/반응형
+### Async/Reactive
 - RxJava, RxAndroid
 - Kotlin Coroutines
 
@@ -414,116 +414,138 @@ cd dashboard
 - Lottie
 - ViewPager2
 
-### 기타
-- ZXing (QR/바코드)
+### Other
+- ZXing (QR/barcode)
 - Apache Commons
-- Timber (로깅)
+- Timber (logging)
 
-## 🔧 트러블슈팅
+## 🔧 Troubleshooting
 
-### JADX를 찾을 수 없음
+### JADX Not Found
 
 ```
 Error: JADX not found. Install with: brew install jadx
 ```
 
-**해결**: JADX가 PATH에 있는지 확인
+**Fix**: Check if JADX is in PATH
 ```bash
 which jadx
-# 결과가 없으면 설치 필요
+# If no output, install required
 ```
 
-### APKTool을 찾을 수 없음
+### APKTool Not Found
 
 ```
 Warning: Could not decode AndroidManifest.xml
 ```
 
-**해결**: APKTool 설치 확인
+**Fix**: Verify APKTool installation
 ```bash
 which apktool
 apktool --version
 ```
 
-### Dashboard가 IDLE 상태
+### Dashboard Shows IDLE
 
-**현상**: Dashboard가 "Waiting for pipeline to start..." 표시
+**Issue**: Dashboard displays "Waiting for pipeline to start..."
 
-**해결**:
-1. `output.properties`가 프로젝트 루트에 있는지 확인
-2. `output.dir` 설정이 실제 출력 경로와 일치하는지 확인
-3. Dashboard 재시작: `cd dashboard && ./start-dashboard.sh`
+**Fix**:
+1. Check if `output.properties` exists in project root
+2. Verify `output.dir` matches actual output path
+3. Restart Dashboard: `cd dashboard && ./start-dashboard.sh`
 
-### Ollama 연결 실패
+### Ollama Connection Failed
 
 ```
 Error: Failed to connect to Ollama at http://localhost:11434
 ```
 
-**해결**:
+**Fix**:
 ```bash
-# Ollama 서버 확인
+# Check Ollama server
 curl http://localhost:11434/api/tags
 
-# Ollama 시작
+# Start Ollama
 ollama serve
 
-# 모델 확인
+# Check models
 ollama list
 ```
 
-### 메모리 부족
+### Out of Memory
 
-대용량 APK 처리 시 메모리 부족 오류가 발생할 수 있습니다.
+Large APK processing may cause memory errors.
 
 ```bash
-# Gradle JVM 메모리 증가
+# Increase Gradle JVM memory
 ./gradlew run -Dorg.gradle.jvmargs="-Xmx8g" --args="generate large.apk -o output"
 
-# 더 작은 모델 사용
+# Use smaller model
 ./gradlew run --args="generate large.apk -o output --ai --model deepseek-coder:6.7b"
 ```
 
-### Dashboard 포트 충돌
+### Dashboard Port Conflict
 
 ```
 Error: Port 3000 already in use
 ```
 
-**해결**:
-1. 다른 포트 사용: `cd dashboard && PORT=3001 npm run dev`
-2. 또는 `output.properties`에서 `dashboard.port` 변경
-3. 자동 선택 스크립트는 이미 다음 포트를 시도함
+**Fix**:
+1. Use different port: `cd dashboard && PORT=3001 npm run dev`
+2. Or change `dashboard.port` in `output.properties`
+3. Auto selection script already tries next ports
 
-### 빌드 오류 해결
+### Build Errors
 
-생성된 프로젝트 빌드 시 발생할 수 있는 일반적인 오류:
+Common errors when building generated project:
 
-1. **Duplicate class 오류**
-   - build.gradle에서 중복된 의존성 제거
+1. **Duplicate class error**
+   - Remove duplicate dependencies in build.gradle
 
-2. **Missing resource 오류**
-   - 난독화로 인해 일부 리소스 참조가 깨질 수 있음
-   - R 클래스 참조 수동 수정 필요
+2. **Missing resource error**
+   - Some resource references may be broken due to obfuscation
+   - Manual R class reference fixes may be needed
 
-3. **API 호환성 오류**
-   - minSdk/targetSdk 버전 조정
+3. **API compatibility error**
+   - Adjust minSdk/targetSdk versions
 
-## 🚫 제한사항
+## 🚫 Limitations
 
-- **난독화된 코드**: ProGuard/R8로 난독화된 코드는 복원되지만 가독성이 떨어짐
-- **네이티브 라이브러리**: .so 파일은 복사만 되고 디컴파일되지 않음
-- **동적 로딩**: 리플렉션이나 동적 클래스 로딩은 완벽히 복원되지 않을 수 있음
-- **정확한 버전**: 라이브러리 버전은 추정치이며 정확하지 않을 수 있음
-- **AI 정확도**: AI가 추론한 이름이 항상 정확하지 않을 수 있음
+- **Obfuscated Code**: ProGuard/R8 obfuscated code is restored but readability is reduced
+- **Native Libraries**: .so files are copied only, not decompiled
+- **Dynamic Loading**: Reflection or dynamic class loading may not be perfectly restored
+- **Accurate Versions**: Library versions are estimates and may not be accurate
+- **AI Accuracy**: AI-inferred names may not always be accurate
 
-## 📄 라이선스
+## 📄 License
 
 MIT License
 
-## ⚖️ 법적 고지
+## ⚖️ Legal Disclaimer
 
-이 도구는 교육 및 보안 연구 목적으로 제작되었습니다. APK 리버스 엔지니어링에 대한 법적 권한이 있는 경우에만 사용하세요.
+**IMPORTANT**: This tool is intended for educational and security research purposes only.
+
+### Users must agree to:
+
+1. **Legal Use Only**
+   - Use only when you have legal rights for APK reverse engineering
+   - Apply only to apps you developed or have explicit permission
+   - Prohibited from using for intellectual property infringement
+
+2. **Disclaimer of Liability**
+   - Developer is not responsible for any legal issues arising from use of this tool
+   - APK reverse engineering may violate laws in your country of residence
+   - No warranty for damages from commercial use
+
+3. **Security Research Purpose**
+   - Use only for ethical purposes like vulnerability analysis, security research
+   - Publish research results responsibly
+
+4. **User Responsibility**
+   - User is solely responsible for all consequences of using this tool
+   - User is liable for all legal problems from illegal use
+
+**Summary**: Developer assumes no liability for any problems caused by using this tool. All responsibility lies with the user.
 
 ---
 
