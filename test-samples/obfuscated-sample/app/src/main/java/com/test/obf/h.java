@@ -30,7 +30,7 @@ public class h {
 
     private h() {
         i = Executors.newFixedThreadPool(3);
-        j = c.c();
+        j = c.downloadImageAndHashNameIfSuccessful();
         k = new File("image_cache");
         k.mkdirs();
         l = new ConcurrentHashMap<>();
@@ -44,17 +44,18 @@ public class h {
         return h;
     }
 
-    public void a(String imageUrl, d.i callback) {
+    // [Deobfuscated] a -> downloadImageAndHashNameIfSuccessful * Downloads an image from a URL, generates its MD5 hash and saves it to the cache. If successful, returns the file object of the downloaded image; otherwise, returns null.
+    public void downloadImageAndHashNameIfSuccessful(String url, d.i cb) {
         // loadImage
-        File m = l.get(imageUrl);
-        if (m != null && m.exists()) {
-            callback.md5HashGenerator(m.getAbsolutePath());
+        File cachedImageFile = l.get(url);
+        if (cachedImageFile != null && cachedImageFile.exists()) {
+            cb.md5HashGenerator(cachedImageFile.getAbsolutePath());
             return;
         }
-        File n = b(imageUrl);
-        if (n != null && n.exists()) {
-            l.put(imageUrl, n);
-            callback.md5HashGenerator(n.getAbsolutePath());
+        File downloadedImageFile = b(url);
+        if (downloadedImageFile != null && downloadedImageFile.exists()) {
+            l.put(url, downloadedImageFile);
+            cb.md5HashGenerator(downloadedImageFile.getAbsolutePath());
             return;
         }
         i.execute(new Runnable() {
@@ -62,15 +63,15 @@ public class h {
             @Override
             public void run() {
                 try {
-                    File o = c(imageUrl);
-                    if (o != null) {
-                        l.put(imageUrl, o);
-                        callback.md5HashGenerator(o.getAbsolutePath());
+                    File successfullyDownloadedImage = downloadImageAndHashNameIfSuccessful(url);
+                    if (successfullyDownloadedImage != null) {
+                        l.put(url, successfullyDownloadedImage);
+                        cb.md5HashGenerator(successfullyDownloadedImage.getAbsolutePath());
                     } else {
-                        callback.b("Failed to download image");
+                        cb.b("Failed to download image");
                     }
                 } catch (Exception e) {
-                    callback.b(e.getMessage());
+                    cb.b(e.getMessage());
                 }
             }
         });
@@ -84,29 +85,30 @@ public class h {
         return new File(k, p + ".jpg");
     }
 
-    private File c(String urlString) throws Exception {
+    // [Deobfuscated] c -> downloadImageAndHashNameIfSuccessful * Downloads an image from a URL and hashes the URL to name the file. If the HTTP response code is not 200, it throws an exception.
+    private File downloadImageAndHashNameIfSuccessful(String imageUrl) throws Exception {
         // downloadImage
-        URL url = new URL(urlString);
-        HttpURLConnection q = (HttpURLConnection) url.openConnection();
-        q.setConnectTimeout(15000);
-        q.setReadTimeout(15000);
-        int r = q.getResponseCode();
-        if (r == 200) {
+        URL downloadedImageUrl = new URL(imageUrl);
+        HttpURLConnection httpConnection = (HttpURLConnection) downloadedImageUrl.openConnection();
+        httpConnection.setConnectTimeout(15000);
+        httpConnection.setReadTimeout(15000);
+        int responseCode = httpConnection.getResponseCode();
+        if (responseCode == 200) {
             // md5
-            String s = d.md5HashGenerator(urlString);
-            File t = new File(k, s + ".jpg");
-            FileOutputStream u = new FileOutputStream(t);
-            InputStream v = q.getInputStream();
-            byte[] w = new byte[4096];
-            int x;
-            while ((x = v.read(w)) != -1) {
-                u.write(w, 0, x);
+            String hashedUrl = d.md5HashGenerator(imageUrl);
+            File fileToSaveDownloadedImage = new File(k, hashedUrl + ".jpg");
+            FileOutputStream fileOutputStream = new FileOutputStream(fileToSaveDownloadedImage);
+            InputStream inputStreamFromHttpResponse = httpConnection.getInputStream();
+            byte[] bufferForReadingInputStream = new byte[4096];
+            int bytesRead;
+            while ((bytesRead = inputStreamFromHttpResponse.read(bufferForReadingInputStream)) != -1) {
+                fileOutputStream.write(bufferForReadingInputStream, 0, bytesRead);
             }
-            v.close();
-            u.close();
-            return t;
+            inputStreamFromHttpResponse.close();
+            fileOutputStream.close();
+            return fileToSaveDownloadedImage;
         } else {
-            throw new Exception("HTTP " + r);
+            throw new Exception("HTTP " + responseCode);
         }
     }
 
@@ -128,7 +130,8 @@ public class h {
         i.shutdown();
     }
 
-    public long f() {
+    // [Deobfuscated] f -> shutdownService * Shuts down a service
+    public long shutdownService() {
         // getCacheSize
         long g = 0;
         File[] h = k.listFiles();

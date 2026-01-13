@@ -36,37 +36,39 @@ public class c {
         return c;
     }
 
-    public void a(String path, d.i callback) {
+    // [Deobfuscated] a -> executeGetRequest * Executes a GET request and calls the provided callback with the response
+    public void executeGetRequest(String requestPath, d.i responseCallback) {
         // get
         d.execute(new Runnable() {
 
             @Override
             public void run() {
                 try {
-                    String g = executeRequest(path, "GET");
-                    if (callback != null) {
-                        callback.a(g);
+                    String getResponse = executeRequest(requestPath, "GET");
+                    if (responseCallback != null) {
+                        responseCallback.a(getResponse);
                     }
                 } catch (Exception e) {
-                    callback.executeRequest(e.getMessage());
+                    responseCallback.executeRequest(e.getMessage());
                 }
             }
         });
     }
 
-    public void c(String path, String body, d.i callback) {
+    // [Deobfuscated] c -> executeHttpRequestWithCallback * Executes an HTTP request with a callback function
+    public void executeHttpRequestWithCallback(String requestPath, String requestBody, d.i httpCallback) {
         // post
         d.execute(new Runnable() {
 
             @Override
             public void run() {
                 try {
-                    String g = executeHttpRequestWithBody(path, body, "POST");
-                    if (callback != null) {
-                        callback.a(g);
+                    String g = executeHttpRequestWithBody(requestPath, requestBody, "POST");
+                    if (httpCallback != null) {
+                        httpCallback.a(g);
                     }
                 } catch (Exception e) {
-                    callback.executeRequest(e.getMessage());
+                    httpCallback.executeRequest(e.getMessage());
                 }
             }
         });

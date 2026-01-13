@@ -5,7 +5,9 @@ import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
+import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.file
+import com.github.ajalt.clikt.parameters.types.int
 import com.whatap.apk2project.generator.ProjectGenerator
 import com.whatap.apk2project.models.GenerateResult
 import com.whatap.apk2project.utils.Logger
@@ -32,6 +34,29 @@ class GenerateCommand : CliktCommand(
     private val verbose by option("-v", "--verbose", help = "Verbose output")
         .flag(default = false)
 
+    // AI Deobfuscation options
+    private val ai by option("--ai", help = "Enable AI-powered deobfuscation")
+        .flag(default = false)
+
+    private val aiClientType by option("--ai-client", help = "AI client type")
+        .choice("ollama", "claude", "codex")
+        .default("ollama")
+
+    private val modelName by option("--model", help = "AI model name")
+        .default("deepseek-coder:33b")
+
+    private val enableKorean by option("--korean", help = "Enable Korean translation")
+        .flag(default = false)
+
+    private val translationModelName by option("--translation-model", help = "Translation model name")
+        .default("qwen2.5:7b")
+
+    private val batchSize by option("--batch-size", help = "Number of parallel workers")
+        .int().default(10)
+
+    private val requestDelay by option("--request-delay", help = "Delay between AI requests (ms)")
+        .int().default(1000)
+
     override fun run(): Unit = runBlocking {
         Logger.verbose = verbose
 
@@ -48,7 +73,15 @@ class GenerateCommand : CliktCommand(
         val options = ProjectGenerator.GenerateOptions(
             keepTempFiles = keepTemp,
             skipVerification = skipVerify,
-            verbose = verbose
+            verbose = verbose,
+            // AI Deobfuscation options
+            enableAi = ai,
+            aiClientType = com.whatap.apk2project.deobfuscator.client.AiClientType.valueOf(aiClientType.uppercase()),
+            modelName = modelName,
+            enableKorean = enableKorean,
+            translationModelName = translationModelName,
+            batchSize = batchSize,
+            requestDelay = requestDelay.toLong()
         )
 
         val result = generator.generate(apkFile, output, options)

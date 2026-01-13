@@ -38,17 +38,40 @@ class ProjectGenerator(
         val workDir = FileUtils.createTempDirectory("apk2project")
         var totalDuration: Long = 0
 
+        // ProgressMonitor for PARSE 0 (sourceDir will be set after decompilation)
+        val monitor = com.whatap.apk2project.deobfuscator.monitor.ProgressMonitor(
+            File(outputDir, ".apk2project")
+        )
+        monitor.apkFilePath = apkFile.absolutePath
+        monitor.outputProjectPath = outputDir.absolutePath
+        monitor.start()
+
         try {
             totalDuration = measureTimeMillis {
                 // Step 1: Parse AndroidManifest
                 Logger.header("Step 1: Analyzing APK")
+                monitor.currentPhase = com.whatap.apk2project.deobfuscator.monitor.PipelinePhase.PARSE0_PARSING_MANIFEST
+                monitor.parse0Step = 1
+                monitor.parse0Progress = 0.0
+                monitor.phase = "PARSE 0: Parsing Manifest"
+                monitor.status = "Analyzing APK structure..."
+                monitor.forceUpdate()  // 즉시 반영
+
                 val apkInfo = manifestParser.parseFromApk(apkFile, workDir)
                     ?: return GenerateResult.Failure("Failed to parse AndroidManifest.xml")
 
                 printApkInfo(apkInfo)
+                monitor.parse0Progress = 20.0
+                monitor.forceUpdate()  // 즉시 반영
 
                 // Step 2: Decompile
                 Logger.header("Step 2: Decompiling")
+                monitor.currentPhase = com.whatap.apk2project.deobfuscator.monitor.PipelinePhase.PARSE0_DECOMPILING
+                monitor.parse0Step = 2
+                monitor.phase = "PARSE 0: Decompiling"
+                monitor.status = "Decompiling DEX to Java..."
+                monitor.forceUpdate()  // 즉시 반영
+
                 val decompileResult = jadxDecompiler.decompile(apkFile, workDir)
 
                 val (sourceDir, resourceDir, decompileStats) = when (decompileResult) {
@@ -66,24 +89,46 @@ class ProjectGenerator(
                         )
                     }
                     is DecompileResult.Failure -> {
+                        monitor.currentPhase = com.whatap.apk2project.deobfuscator.monitor.PipelinePhase.FAILED
+                        monitor.status = "Decompilation failed: ${decompileResult.error}"
+                        monitor.forceUpdate()  // 즉시 반영
                         return GenerateResult.Failure(decompileResult.error, decompileResult.cause)
                     }
                 }
 
+                monitor.decompileSuccessRate = decompileStats.successRate.toDouble() * 100.0
                 Logger.success("Decompiled ${decompileStats.successfulClasses} classes (${(decompileStats.successRate * 100).toInt()}% success)")
+                monitor.parse0Progress = 40.0
+                monitor.forceUpdate()  // 즉시 반영
 
                 // Step 3: Extract resources (if JADX didn't do it properly)
                 Logger.header("Step 3: Extracting Resources")
+                monitor.currentPhase = com.whatap.apk2project.deobfuscator.monitor.PipelinePhase.PARSE0_EXTRACTING_RESOURCES
+                monitor.parse0Step = 3
+                monitor.phase = "PARSE 0: Extracting Resources"
+                monitor.status = "Extracting resources..."
+                monitor.forceUpdate()  // 즉시 반영
+
                 val resResult = resourceExtractor.extract(apkFile, workDir)
+                monitor.totalResourcesExtracted = resResult.resources.size
                 Logger.success("Extracted ${resResult.resources.size} resource files")
+                monitor.parse0Progress = 60.0
+                monitor.forceUpdate()  // 즉시 반영
 
                 // Step 4: Analyze dependencies
                 Logger.header("Step 4: Analyzing Dependencies")
+                monitor.currentPhase = com.whatap.apk2project.deobfuscator.monitor.PipelinePhase.PARSE0_ANALYZING_DEPENDENCIES
+                monitor.parse0Step = 4
+                monitor.phase = "PARSE 0: Analyzing Dependencies"
+                monitor.status = "Detecting libraries and dependencies..."
+                monitor.forceUpdate()  // 즉시 반영
+
                 val analysisResult = dependencyAnalyzer.analyze(sourceDir)
 
                 val dependencies = when (analysisResult) {
                     is AnalysisResult.Success -> {
                         Logger.success("Detected ${analysisResult.dependencies.size} dependencies")
+                        monitor.dependenciesDetected = analysisResult.dependencies.size
                         analysisResult.dependencies
                     }
                     is AnalysisResult.Failure -> {
@@ -91,9 +136,17 @@ class ProjectGenerator(
                         emptyList()
                     }
                 }
+                monitor.parse0Progress = 80.0
+                monitor.forceUpdate()  // 즉시 반영
 
                 // Step 5: Generate project structure
                 Logger.header("Step 5: Generating Project")
+                monitor.currentPhase = com.whatap.apk2project.deobfuscator.monitor.PipelinePhase.PARSE0_GENERATING_PROJECT
+                monitor.parse0Step = 5
+                monitor.phase = "PARSE 0: Generating Project"
+                monitor.status = "Creating Gradle project structure..."
+                monitor.forceUpdate()  // 즉시 반영
+
                 val projectDir = generateProjectStructure(
                     outputDir = outputDir,
                     apkInfo = apkInfo,
@@ -107,11 +160,27 @@ class ProjectGenerator(
                 )
 
                 Logger.success("Project generated at: ${projectDir.absolutePath}")
+                monitor.parse0Progress = 100.0
+                monitor.forceUpdate()  // 즉시 반영
+
+                // Step 6: AI Deobfuscation (optional)
+                if (options.enableAi) {
+                    Logger.header("Step 6: AI Deobfuscation")
+                    runAiDeobfuscation(sourceDir, outputDir, options, monitor)
+                }
             }
 
             // Cleanup
             if (!options.keepTempFiles) {
                 FileUtils.deleteDirectory(workDir)
+            }
+
+            // Mark PARSE 0 as complete (unless AI deobfuscation is running)
+            if (!options.enableAi) {
+                monitor.currentPhase = com.whatap.apk2project.deobfuscator.monitor.PipelinePhase.COMPLETE
+                monitor.phase = "Complete"
+                monitor.status = "Project generation completed successfully"
+                monitor.isRunning = false
             }
 
             Logger.header("Complete!")
@@ -673,7 +742,15 @@ zipStorePath=wrapper/dists
     data class GenerateOptions(
         val keepTempFiles: Boolean = false,
         val skipVerification: Boolean = false,
-        val verbose: Boolean = false
+        val verbose: Boolean = false,
+        // AI Deobfuscation options
+        val enableAi: Boolean = false,
+        val aiClientType: com.whatap.apk2project.deobfuscator.client.AiClientType = com.whatap.apk2project.deobfuscator.client.AiClientType.OLLAMA,
+        val modelName: String = "deepseek-coder:33b",
+        val enableKorean: Boolean = false,
+        val translationModelName: String = "qwen2.5:7b",
+        val batchSize: Int = 10,
+        val requestDelay: Long = 1000
     )
 
     companion object {
@@ -732,5 +809,49 @@ if exist "%JAVA_HOME%\bin\java.exe" (
 :end
 endlocal
         """.trimIndent()
+    }
+
+    /**
+     * Run AI deobfuscation pipeline
+     */
+    private suspend fun runAiDeobfuscation(
+        sourceDir: File,
+        projectOutputDir: File,
+        options: GenerateOptions,
+        monitor: com.whatap.apk2project.deobfuscator.monitor.ProgressMonitor
+    ) {
+        // Use same monitor as PARSE 0 (share ProgressMonitor)
+        val config = com.whatap.apk2project.deobfuscator.pipeline.PipelineConfig(
+            aiClientType = options.aiClientType,
+            modelName = options.modelName,
+            batchSize = options.batchSize,
+            requestDelay = options.requestDelay,
+            enableKorean = options.enableKorean,
+            translationModelName = options.translationModelName,
+            useCache = true
+        )
+
+        val pipeline = com.whatap.apk2project.deobfuscator.pipeline.DeobfuscationPipeline(
+            sourceDir = sourceDir,
+            outputDir = File(projectOutputDir, ".apk2project"),  // Use same outputDir as PARSE 0
+            config = config,
+            externalMonitor = monitor  // Share ProgressMonitor instance
+        )
+
+        // Run pipeline
+        val result = pipeline.run()
+
+        Logger.info("────────────────────────────────────────────────")
+        if (result.success) {
+            Logger.success("AI Deobfuscation complete!")
+            Logger.info("Total Methods: ${result.stats.totalMethods}")
+            Logger.info("Processed Methods: ${result.stats.processedMethods}")
+            Logger.info("Renamed Methods: ${result.stats.renamedMethods}")
+            Logger.info("Renamed Classes: ${result.stats.renamedClasses}")
+            Logger.info("Duration: ${result.stats.durationMs / 1000}s")
+            Logger.info("Results saved to: ${projectOutputDir.absolutePath}")
+        } else {
+            Logger.error("AI Deobfuscation failed: ${result.error}")
+        }
     }
 }

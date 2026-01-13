@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // 기본 상태 (파이프라인 시작 전)
 const defaultStatus = {
@@ -53,73 +57,60 @@ const defaultStatus = {
 };
 
 /**
- * Recursively search for all .apk2project/status.json files
- * @param startDir Starting directory for search
- * @param maxDepth Maximum recursion depth (default: 5 levels up)
- * @returns Array of status.json file paths
+ * output.properties에서 설정 읽기
  */
-function findStatusFiles(startDir: string, maxDepth: number = 5): string[] {
-  const statusFiles: string[] = [];
-  const visited = new Set<string>();
-  const skipDirs = new Set([
-    'node_modules', '.git', 'dist', 'build', 'target', 'out',
-    '.next', '.idea', 'vscode', 'gradle', '.gradle'
-  ]);
+function getConfig() {
+  try {
+    // Dashboard runs from dashboard/ directory, so parent is project root
+    const projectRoot = path.dirname(process.cwd());
+    const propertiesPath = path.join(projectRoot, 'output.properties');
 
-  function searchDir(dir: string, depth: number) {
-    // Skip if already visited or too deep
-    if (depth > maxDepth || visited.has(dir)) return;
-    visited.add(dir);
+    console.log('[DEBUG] process.cwd():', process.cwd());
+    console.log('[DEBUG] projectRoot:', projectRoot);
+    console.log('[DEBUG] propertiesPath:', propertiesPath);
+    console.log('[DEBUG] properties exists:', fs.existsSync(propertiesPath));
 
-    try {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-      for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name);
-
-        if (entry.isDirectory()) {
-          // Skip common non-project directories
-          if (skipDirs.has(entry.name)) continue;
-          searchDir(fullPath, depth + 1);
-        } else if (entry.name === 'status.json') {
-          // Only include if in .apk2project directory
-          if (dir.endsWith('.apk2project')) {
-            statusFiles.push(fullPath);
-          }
-        }
-      }
-    } catch (error) {
-      // Ignore permission errors and non-existent directories
+    if (!fs.existsSync(propertiesPath)) {
+      return {
+        outputDir: path.join(projectRoot, 'generate_project'),
+        dashboardPort: 3000,
+        ollamaBaseUrl: 'http://localhost:11434'
+      };
     }
+
+    const content = fs.readFileSync(propertiesPath, 'utf-8');
+    const outputDirMatch = content.match(/output\.dir=(.+)/);
+    const dashboardPortMatch = content.match(/dashboard\.port=(.+)/);
+    const ollamaUrlMatch = content.match(/ollama\.baseUrl=(.+)/);
+
+    let outputDir = outputDirMatch?.[1]?.trim() || 'generate_project';
+    const dashboardPort = dashboardPortMatch?.[1]?.trim() || '3000';
+    const ollamaBaseUrl = ollamaUrlMatch?.[1]?.trim() || 'http://localhost:11434';
+
+    // 상대 경로면 프로젝트 루트 기준으로 resolve
+    if (!path.isAbsolute(outputDir)) {
+      outputDir = path.join(projectRoot, outputDir);
+    }
+
+    return { outputDir, dashboardPort: parseInt(dashboardPort), ollamaBaseUrl };
+  } catch (error) {
+    console.error('Error reading output.properties:', error);
+    return {
+      outputDir: path.join(path.dirname(process.cwd()), 'generate_project'),
+      dashboardPort: 3000,
+      ollamaBaseUrl: 'http://localhost:11434'
+    };
   }
-
-  // Search current directory and parent directories
-  let currentDir = startDir;
-  for (let i = 0; i < maxDepth; i++) {
-    searchDir(currentDir, 0);
-
-    const parent = path.dirname(currentDir);
-    if (parent === currentDir) break; // Reached root
-    currentDir = parent;
-  }
-
-  return statusFiles;
 }
 
 export async function GET() {
   try {
-    // Dynamically search for all status.json files (no hardcoded paths)
-    const statusFiles = findStatusFiles(process.cwd());
+    // properties에서 설정 읽기
+    const { outputDir } = getConfig();
+    const statusPath = path.join(outputDir, '.apk2project', 'status.json');
 
-    // Select the most recently modified file
-    const existingPaths = statusFiles
-      .map(p => ({ path: p, mtime: fs.statSync(p).mtime.getTime() }))
-      .sort((a, b) => b.mtime - a.mtime);
-
-    const statusPath = existingPaths.length > 0 ? existingPaths[0].path : null;
-
-    // 파일이 없으면 기본 상태 반환 (에러 대신)
-    if (!statusPath) {
+    // 파일이 없으면 기본 상태 반환
+    if (!fs.existsSync(statusPath)) {
       return NextResponse.json(defaultStatus, {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -143,7 +134,6 @@ export async function GET() {
     });
   } catch (error) {
     console.error('Error reading status.json:', error);
-    console.error('Error details:', JSON.stringify(error, null, 2));
     // 에러 시에도 기본 상태 반환
     return NextResponse.json({
       ...defaultStatus,

@@ -27,40 +27,42 @@ public class i {
         return i;
     }
 
-    public boolean a(String email) {
+    // [Deobfuscated] a -> validateEmail * validates an email address
+    public boolean validateEmail(String userEmail) {
         // validateEmail
         j.clear();
-        if (d.g(email)) {
+        if (d.g(userEmail)) {
             j.add("Email is required");
             return false;
         }
-        if (!d.d(email)) {
+        if (!d.d(userEmail)) {
             j.add("Invalid email format");
             return false;
         }
-        if (email.length() > 100) {
+        if (userEmail.length() > 100) {
             j.add("Email is too long");
             return false;
         }
         return true;
     }
 
-    public boolean b(String password) {
+    // [Deobfuscated] b -> validatePassword * validates the password based on certain conditions
+    public boolean validatePassword(String userInput) {
         // validatePassword
         j.clear();
-        if (d.g(password)) {
+        if (d.g(userInput)) {
             j.add("Password is required");
             return false;
         }
-        if (password.length() < 8) {
+        if (userInput.length() < 8) {
             j.add("Password must be at least 8 characters");
             return false;
         }
-        if (!c(password)) {
+        if (!c(userInput)) {
             j.add("Password must contain at least one uppercase letter");
             return false;
         }
-        if (!d(password)) {
+        if (!d(userInput)) {
             j.add("Password must contain at least one digit");
             return false;
         }

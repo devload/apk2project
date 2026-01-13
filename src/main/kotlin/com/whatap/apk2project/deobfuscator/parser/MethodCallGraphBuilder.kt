@@ -57,6 +57,7 @@ class MethodCallGraphBuilder {
     fun parseFilesOnly(sourceDir: File, progressCallback: ((Int, Int) -> Unit)? = null): ParseResult {
         val javaFiles = sourceDir.walkTopDown()
             .filter { it.isFile && it.extension == "java" }
+            .filter { !it.absolutePath.contains(".apk2project") }  // 캐시 디렉토리 제외
             .toList()
 
         logger.info("Found ${javaFiles.size} Java files to parse")

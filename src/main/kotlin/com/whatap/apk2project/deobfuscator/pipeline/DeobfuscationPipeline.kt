@@ -36,13 +36,15 @@ import java.util.concurrent.atomic.AtomicInteger
 class DeobfuscationPipeline(
     private val sourceDir: File,
     private val outputDir: File,
-    private val config: PipelineConfig = PipelineConfig()
+    private val config: PipelineConfig = PipelineConfig(),
+    private val externalMonitor: com.whatap.apk2project.deobfuscator.monitor.ProgressMonitor? = null
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
     private val sessionManager = SessionManager(outputDir)
     private val graphBuilder = MethodCallGraphBuilder()
-    private val monitor = ProgressMonitor(outputDir)
+    // Use external monitor if provided, otherwise create new one
+    private val monitor = externalMonitor ?: ProgressMonitor(outputDir)
     private val aiClient: AiClient = AiClientFactory.create(
         type = config.aiClientType,
         executablePath = config.aiExecutablePath,
@@ -121,18 +123,28 @@ class DeobfuscationPipeline(
         try {
             // Phase 1: 파일 파싱
             phase1ParseFiles()
+            logger.info("✓ Phase 1 (Parsing) complete. Waiting 5 seconds before next phase...")
+            delay(5000)
 
             // Phase 2: Call Graph 구축
             phase2BuildCallGraph()
+            logger.info("✓ Phase 2 (Call Graph) complete. Waiting 5 seconds before next phase...")
+            delay(5000)
 
             // Phase 3: AI CLI 준비
             phase3PrepareAiClient()
+            logger.info("✓ Phase 3 (AI Client Ready) complete. Waiting 5 seconds before next phase...")
+            delay(5000)
 
             // Phase 4: 리프 메소드부터 상향식 처리
             phase4ProcessBottomUp()
+            logger.info("✓ Phase 4 (Method Deobfuscation) complete. Waiting 5 seconds before next phase...")
+            delay(5000)
 
             // Phase 5: 클래스 리네이밍
             phase5RenameClasses()
+            logger.info("✓ Phase 5 (Class Renaming) complete. Waiting 5 seconds before next phase...")
+            delay(5000)
 
             // Phase 6: 결과 저장
             phase6SaveResults()
@@ -170,9 +182,27 @@ class DeobfuscationPipeline(
     private fun cleanOutputDir() {
         logger.info("Cleaning previous results...")
 
+        // status.json이 있으면 백업 (타임스탬프로 저장)
+        val statusFile = File(outputDir, "status.json")
+        if (statusFile.exists()) {
+            val timestamp = java.time.LocalDateTime.now().format(
+                java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
+            )
+            val backupFile = File(outputDir, "status.json.backup_$timestamp")
+            statusFile.copyTo(backupFile, overwrite = true)
+            logger.info("  Backed up: status.json → ${backupFile.name}")
+
+            // 오래된 백업 파일 정리 (최근 5개만 유지)
+            outputDir.listFiles()
+                ?.filter { it.name.startsWith("status.json.backup_") }
+                ?.sortedByDescending { it.name }
+                ?.drop(5)
+                ?.forEach { it.delete() }
+        }
+
         // 이전 실행의 결과 파일들 삭제
         val filesToClean = listOf(
-            "status.json",
+            "status.json",  // 백업 후 삭제
             "mappings.json",
             "rename_history.md",
             "stats.txt"

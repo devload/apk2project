@@ -1,5 +1,7 @@
 package com.test.obf;
 
+import android.util.Log;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -71,7 +73,8 @@ public class e {
         return f != null;
     }
 
-    public void b() {
+    // [Deobfuscated] b -> logoutAndClearCache * Logs out the user and clears cache and preferences
+    public void logoutAndClearCache() {
         // logout
         f = null;
         g = 0;

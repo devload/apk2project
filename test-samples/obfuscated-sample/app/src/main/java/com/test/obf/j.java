@@ -1,5 +1,6 @@
 package com.test.obf;
 
+import android.os.Handler;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -34,22 +35,23 @@ public class j {
         return j;
     }
 
-    public void a(String userId, d.i callback) {
+    // [Deobfuscated] a -> authenticateAndGetUserProfile * Authenticates the user and retrieves their profile information
+    public void authenticateAndGetUserProfile(String userId, d.i callback) {
         // getUserProfile
         // getToken()
-        String l = e.getInstanceOrCreate();
-        if (l == null) {
+        String token = e.getInstanceOrCreate();
+        if (token == null) {
             callback.base64Encode("Not authenticated");
             return;
         }
-        String m = "/users/" + userId;
-        c.a(m, new d.i() {
+        String userProfilePath = "/users/" + userId;
+        c.executeGetRequest(userProfilePath, new d.i() {
 
             @Override
             public void a(String response) {
                 // onSuccess
-                String n = base64Encode(response, "data");
-                callback.a(n);
+                String encodedResponse = base64Encode(response, "data");
+                callback.executeGetRequest(encodedResponse);
             }
 
             @Override
@@ -60,48 +62,50 @@ public class j {
         });
     }
 
-    public void b(Map<String, String> data, d.i callback) {
+    // [Deobfuscated] b -> updateUserProfile * Updates the user profile using a base64 encoded data string and handles success or error responses
+    public void updateUserProfile(Map<String, String> data, d.i responseCallback) {
         // updateUserProfile
         // getToken()
-        String l = e.getInstanceOrCreate();
-        if (l == null) {
-            callback.base64Encode("Not authenticated");
+        String authenticationToken = e.getInstanceOrCreate();
+        if (authenticationToken == null) {
+            responseCallback.base64Encode("Not authenticated");
             return;
         }
-        String m = "/users/profile";
+        String apiEndpoint = "/users/profile";
         // base64
-        String n = d.base64Encode(data.toString());
-        c.getInstanceOrCreate(m, n, new d.i() {
+        String encodedData = d.base64Encode(data.toString());
+        c.getInstanceOrCreate(apiEndpoint, encodedData, new d.i() {
 
             @Override
             public void a(String response) {
                 // onSuccess
-                callback.a(response);
+                responseCallback.executeGetRequest(response);
             }
 
             @Override
             public void b(String error) {
                 // onError
-                callback.base64Encode(error);
+                responseCallback.base64Encode(error);
             }
         });
     }
 
-    public void c(d.i callback) {
+    // [Deobfuscated] c -> getNotifications * Retrieves notifications for a user if authenticated
+    public void getNotifications(d.i callback) {
         // getNotifications
         // getToken()
-        String l = e.getInstanceOrCreate();
-        if (l == null) {
+        String authToken = e.getInstanceOrCreate();
+        if (authToken == null) {
             callback.base64Encode("Not authenticated");
             return;
         }
-        String m = "/notifications";
-        c.a(m, new d.i() {
+        String notificationEndpoint = "/notifications";
+        c.executeGetRequest(notificationEndpoint, new d.i() {
 
             @Override
             public void a(String response) {
                 // onSuccess
-                callback.a(response);
+                callback.executeGetRequest(response);
             }
 
             @Override
@@ -127,7 +131,7 @@ public class j {
             @Override
             public void a(String response) {
                 // onSuccess
-                responseCallback.a(response);
+                responseCallback.executeGetRequest(response);
             }
 
             @Override
@@ -138,7 +142,8 @@ public class j {
         });
     }
 
-    public void e(String query, int page, d.i callback) {
+    // [Deobfuscated] e -> onSuccessHandler * Handles successful response from server
+    public void onSuccessHandler(String query, int page, d.i callback) {
         // search
         // getToken()
         String l = e.getInstanceOrCreate();
@@ -147,12 +152,12 @@ public class j {
             return;
         }
         String m = "/search?q=" + query + "&page=" + page;
-        c.a(m, new d.i() {
+        c.executeGetRequest(m, new d.i() {
 
             @Override
             public void a(String response) {
                 // onSuccess
-                callback.a(response);
+                callback.executeGetRequest(response);
             }
 
             @Override
@@ -179,7 +184,8 @@ public class j {
         return json.substring(startIndexOfValue, endIndexOfValue);
     }
 
-    public void f(String username, String email, String password, d.i callback) {
+    // [Deobfuscated] f -> extractJsonValueByKey * Extracts a value from JSON string by key
+    public void extractJsonValueByKey(String username, String email, String password, d.i callback) {
         // register
         Map<String, String> r = new HashMap<>();
         r.put("username", username);
@@ -190,7 +196,7 @@ public class j {
             @Override
             public void a(String response) {
                 // onSuccess
-                callback.a(response);
+                callback.executeGetRequest(response);
             }
 
             @Override
@@ -201,12 +207,13 @@ public class j {
         });
     }
 
-    public void g(String oldPassword, String newPassword, d.i callback) {
+    // [Deobfuscated] g -> registerUser * Registers a new user with the provided credentials
+    public void registerUser(String oldPassword, String newPassword, d.i registrationCallback) {
         // changePassword
         // getToken()
         String l = e.getInstanceOrCreate();
         if (l == null) {
-            callback.base64Encode("Not authenticated");
+            registrationCallback.base64Encode("Not authenticated");
             return;
         }
         Map<String, String> s = new HashMap<>();
@@ -217,13 +224,13 @@ public class j {
             @Override
             public void a(String response) {
                 // onSuccess
-                callback.a(response);
+                registrationCallback.executeGetRequest(response);
             }
 
             @Override
             public void b(String error) {
                 // onError
-                callback.base64Encode(error);
+                registrationCallback.base64Encode(error);
             }
         });
     }

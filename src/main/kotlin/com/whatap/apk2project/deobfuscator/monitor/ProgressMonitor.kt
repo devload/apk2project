@@ -21,7 +21,11 @@ class ProgressMonitor(
     private val outputDir: File,
     private val gpuSampler: GpuSampler = GpuSamplerFactory.create()
 ) {
-    private val gson = GsonBuilder().setPrettyPrinting().create()
+    private val gson = GsonBuilder()
+        .setPrettyPrinting()
+        .serializeNulls()
+        .serializeSpecialFloatingPointValues()  // NaN, Infinity 허용
+        .create()
     private val statusFile = File(outputDir, "status.json")
     private val dashboardFile = File(outputDir, "dashboard.html")
 
@@ -60,6 +64,15 @@ class ProgressMonitor(
     @Volatile var phase: String = "Initializing"  // 하위 호환성
     @Volatile var status: String = "Starting..."
     @Volatile var isRunning: Boolean = true
+
+    // PARSE 0: APK → Gradle Project Generation
+    @Volatile var parse0Step: Int = 0            // 현재 단계 (1-5)
+    @Volatile var parse0Progress: Double = 0.0    // 전체 진행률 (0-100)
+    @Volatile var apkFilePath: String = ""        // 원본 APK 경로
+    @Volatile var outputProjectPath: String = ""  // 출력 프로젝트 경로
+    @Volatile var decompileSuccessRate: Double = 0.0  // 디컴파일 성공률
+    @Volatile var totalResourcesExtracted: Int = 0     // 추출된 리소스 수
+    @Volatile var dependenciesDetected: Int = 0       // 감지된 의존성 수
 
     // Phase 1: 파일 파싱
     @Volatile var parsedFiles: Int = 0
@@ -101,6 +114,13 @@ class ProgressMonitor(
         createDashboard()
     }
 
+    /**
+     * 즉시 status.json 파일 업데이트 (ProjectGenerator에서 PARSE 0 진행상황 반영용)
+     */
+    fun forceUpdate() {
+        updateStatus()
+    }
+
     fun start() {
         startTime.set(System.currentTimeMillis())
         recentRenames.clear()  // 이전 실행의 히스토리 제거
@@ -124,9 +144,14 @@ class ProgressMonitor(
             } catch (e: Exception) {
                 // Ignore sampling errors
             }
-        }
 
-        updateStatus()
+            try {
+                updateStatus()
+            } catch (e: Exception) {
+                // Ignore status update errors to prevent timer from crashing
+                System.err.println("Warning: Failed to update status.json: ${e.message}")
+            }
+        }
     }
 
     fun setPhase(phase: String, status: String = "") {
@@ -281,10 +306,15 @@ class ProgressMonitor(
         val runtime = Runtime.getRuntime()
 
         // 전체 시스템 CPU 사용률 - 최신 샘플 값 (Ollama 프로세스 포함)
-        val cpuUsage = if (latestCpuUsage > 0.0) {
+        val cpuUsage = if (latestCpuUsage > 0.0 && !latestCpuUsage.isNaN()) {
             latestCpuUsage
         } else {
-            (osBean.systemCpuLoad * 100).coerceIn(0.0, 100.0)
+            val systemLoad = osBean.systemCpuLoad
+            if (systemLoad >= 0 && !systemLoad.isNaN()) {
+                (systemLoad * 100).coerceIn(0.0, 100.0)
+            } else {
+                0.0  // NaN 또는 유효하지 않은 값인 경우 0으로 대체
+            }
         }
         val memoryUsed = (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024)
         val memoryTotal = runtime.maxMemory() / (1024 * 1024)
@@ -343,6 +373,15 @@ class ProgressMonitor(
             estimatedRemainingFormatted = formatDuration(estimatedRemainingMs),
             estimatedCompletionTime = estimatedCompletionTime,
             successRate = successRate,
+            // PARSE 0
+            parse0Step = parse0Step,
+            parse0Progress = parse0Progress,
+            apkFilePath = apkFilePath,
+            outputProjectPath = outputProjectPath,
+            decompileSuccessRate = decompileSuccessRate,
+            totalResourcesExtracted = totalResourcesExtracted,
+            dependenciesDetected = dependenciesDetected,
+            // Phase 1
             parsedFiles = parsedFiles,
             totalFilesToParse = totalFilesToParse,
             failedParseFiles = failedParseFiles,
@@ -377,9 +416,11 @@ class ProgressMonitor(
         )
 
         try {
-            statusFile.writeText(gson.toJson(statusData))
+            val json = gson.toJson(statusData)
+            statusFile.writeText(json)
         } catch (e: Exception) {
-            // Ignore write errors
+            System.err.println("Failed to write status.json: ${e.message}")
+            e.printStackTrace()
         }
     }
 
@@ -475,6 +516,14 @@ data class ProgressStatus(
     val estimatedRemainingFormatted: String,
     val estimatedCompletionTime: String,
     val successRate: Double,
+    // PARSE 0: APK → Gradle Project Generation
+    val parse0Step: Int = 0,
+    val parse0Progress: Double = 0.0,
+    val apkFilePath: String = "",
+    val outputProjectPath: String = "",
+    val decompileSuccessRate: Double = 0.0,
+    val totalResourcesExtracted: Int = 0,
+    val dependenciesDetected: Int = 0,
     // Phase 1: 파일 파싱
     val parsedFiles: Int,
     val totalFilesToParse: Int,
@@ -560,13 +609,23 @@ data class ResourceSnapshot(
  * 파이프라인 Phase
  */
 enum class PipelinePhase {
-    INITIALIZING,           // 초기화
-    PHASE1_FILE_PARSING,    // Phase 1: Java 파일 파싱
-    PHASE2_CALL_GRAPH,      // Phase 2: Call Graph 구축
-    PHASE3_AI_ANALYSIS,     // Phase 3: AI 분석 (DeepSeek → Qwen → Rename)
-    PHASE4_CLASSES,         // Phase 4: 클래스 리네이밍
-    PHASE5_SAVE,            // Phase 5: 결과 저장
-    COMPLETE,               // 완료
-    FAILED                  // 실패
+    INITIALIZING,                   // 초기화
+
+    // PARSE 0: APK → Gradle Project Generation
+    PARSE0_PARSING_MANIFEST,        // Step 1: AndroidManifest 파싱
+    PARSE0_DECOMPILING,             // Step 2: APK 디컴파일
+    PARSE0_EXTRACTING_RESOURCES,    // Step 3: 리소스 추출
+    PARSE0_ANALYZING_DEPENDENCIES,  // Step 4: 의존성 분석
+    PARSE0_GENERATING_PROJECT,      // Step 5: Gradle 프로젝트 생성
+
+    // PARSE 1-5: AI Deobfuscation Pipeline
+    PHASE1_FILE_PARSING,            // Phase 1: Java 파일 파싱
+    PHASE2_CALL_GRAPH,              // Phase 2: Call Graph 구축
+    PHASE3_AI_ANALYSIS,             // Phase 3: AI 분석 (DeepSeek → Qwen → Rename)
+    PHASE4_CLASSES,                 // Phase 4: 클래스 리네이밍
+    PHASE5_SAVE,                    // Phase 5: 결과 저장
+
+    COMPLETE,                       // 완료
+    FAILED                          // 실패
 }
 

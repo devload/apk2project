@@ -26,6 +26,15 @@ interface ProgressStatus {
   estimatedRemainingFormatted: string;
   estimatedCompletionTime: string;
   successRate: number;
+  // PARSE 0: APK → Gradle Project
+  parse0Step: number;
+  parse0Progress: number;
+  apkFilePath: string;
+  outputProjectPath: string;
+  decompileSuccessRate: number;
+  totalResourcesExtracted: number;
+  dependenciesDetected: number;
+  // Phase 1: File Parsing
   parsedFiles: number;
   totalFilesToParse: number;
   failedParseFiles: number;
@@ -38,11 +47,11 @@ interface ProgressStatus {
   aiClientAvailable: boolean;
   phase3Progress: number;
   deepseekQueueSize: number;
-  qwenQueueSize: number;
+  qwenQueueSize: number | null;
   renameQueueSize: number;
   phase4Progress: number;
   classDeepseekQueueSize: number;
-  classQwenQueueSize: number;
+  classQwenQueueSize: number | null;
   classRenameQueueSize: number;
   batchSize: number;
   recentRenames: RenameEntry[];
@@ -233,6 +242,14 @@ export default function Dashboard() {
           classQwenQueueSize={status.classQwenQueueSize}
           classRenameQueueSize={status.classRenameQueueSize}
           currentIteration={status.currentIteration}
+          // PARSE 0 props
+          parse0Step={status.parse0Step}
+          parse0Progress={status.parse0Progress}
+          apkFilePath={status.apkFilePath}
+          outputProjectPath={status.outputProjectPath}
+          decompileSuccessRate={status.decompileSuccessRate}
+          totalResourcesExtracted={status.totalResourcesExtracted}
+          dependenciesDetected={status.dependenciesDetected}
         />
       </div>
 
@@ -475,7 +492,7 @@ function RenameCard({ rename }: { rename: RenameEntry }) {
       )}
 
       {/* References Updated */}
-      {rename.referencesUpdated > 0 && (
+      {rename.referencesUpdated && rename.referencesUpdated > 0 && (
         <div className="bg-blue-900/10 rounded px-2 py-1 border border-blue-600/30">
           <span className="text-xs text-blue-400">🔗 References Updated: {rename.referencesUpdated} file(s)</span>
           {rename.updatedFiles && rename.updatedFiles.length > 0 && (
