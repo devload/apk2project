@@ -16,10 +16,17 @@ import java.util.concurrent.ConcurrentHashMap;
 public class h {
 
     private static h h;
+
     private ExecutorService i;
-    private c j;  // NetworkClient
-    private File k;  // cacheDir
-    private ConcurrentHashMap<String, File> l;  // memoryCache
+
+    // NetworkClient
+    private c j;
+
+    // cacheDir
+    private File k;
+
+    // memoryCache
+    private ConcurrentHashMap<String, File> l;
 
     private h() {
         i = Executors.newFixedThreadPool(3);
@@ -29,7 +36,8 @@ public class h {
         l = new ConcurrentHashMap<>();
     }
 
-    public static h h() {
+    // [Deobfuscated] h -> getInstance * Returns an instance of the class h, creating it if necessary.
+    public static h getInstance() {
         if (h == null) {
             h = new h();
         }
@@ -40,25 +48,24 @@ public class h {
         // loadImage
         File m = l.get(imageUrl);
         if (m != null && m.exists()) {
-            callback.a(m.getAbsolutePath());
+            callback.md5HashGenerator(m.getAbsolutePath());
             return;
         }
-
         File n = b(imageUrl);
         if (n != null && n.exists()) {
             l.put(imageUrl, n);
-            callback.a(n.getAbsolutePath());
+            callback.md5HashGenerator(n.getAbsolutePath());
             return;
         }
-
         i.execute(new Runnable() {
+
             @Override
             public void run() {
                 try {
                     File o = c(imageUrl);
                     if (o != null) {
                         l.put(imageUrl, o);
-                        callback.a(o.getAbsolutePath());
+                        callback.md5HashGenerator(o.getAbsolutePath());
                     } else {
                         callback.b("Failed to download image");
                     }
@@ -71,7 +78,8 @@ public class h {
 
     private File b(String url) {
         // getCachedImage
-        String p = d.a(url);  // md5 hash
+        // md5 hash
+        String p = d.md5HashGenerator(url);
         return new File(k, p + ".jpg");
     }
 
@@ -81,10 +89,10 @@ public class h {
         HttpURLConnection q = (HttpURLConnection) url.openConnection();
         q.setConnectTimeout(15000);
         q.setReadTimeout(15000);
-
         int r = q.getResponseCode();
         if (r == 200) {
-            String s = d.a(urlString);  // md5
+            // md5
+            String s = d.md5HashGenerator(urlString);
             File t = new File(k, s + ".jpg");
             FileOutputStream u = new FileOutputStream(t);
             InputStream v = q.getInputStream();
@@ -101,18 +109,20 @@ public class h {
         }
     }
 
-    public void d() {
+    // [Deobfuscated] d -> clearCacheAndDeleteFiles * clears a cache and deletes all files in a directory
+    public void clearCacheAndDeleteFiles() {
         // clearCache
         l.clear();
-        File[] e = k.listFiles();
-        if (e != null) {
-            for (File f : e) {
-                f.delete();
+        File[] filesInDirectory = k.listFiles();
+        if (filesInDirectory != null) {
+            for (File currentFile : filesInDirectory) {
+                currentFile.delete();
             }
         }
     }
 
-    public void e() {
+    // [Deobfuscated] e -> shutdownService * Shuts down a service
+    public void shutdownService() {
         // shutdown
         i.shutdown();
     }

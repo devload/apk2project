@@ -11,7 +11,9 @@ import java.util.regex.Pattern;
 public class i {
 
     private static i i;
-    private List<String> j;  // errorMessages
+
+    // errorMessages
+    private List<String> j;
 
     private i() {
         j = new ArrayList<>();
@@ -31,78 +33,67 @@ public class i {
             j.add("Email is required");
             return false;
         }
-
         if (!d.d(email)) {
             j.add("Invalid email format");
             return false;
         }
-
         if (email.length() > 100) {
             j.add("Email is too long");
             return false;
         }
-
         return true;
     }
 
     public boolean b(String password) {
         // validatePassword
         j.clear();
-
         if (d.g(password)) {
             j.add("Password is required");
             return false;
         }
-
         if (password.length() < 8) {
             j.add("Password must be at least 8 characters");
             return false;
         }
-
         if (!c(password)) {
             j.add("Password must contain at least one uppercase letter");
             return false;
         }
-
         if (!d(password)) {
             j.add("Password must contain at least one digit");
             return false;
         }
-
         return true;
     }
 
-    public boolean c(String username) {
+    // [Deobfuscated] c -> containsUppercaseLetter * checks if a string contains an uppercase letter
+    public boolean containsUppercaseLetter(String username) {
         // validateUsername
         j.clear();
-
         if (d.g(username)) {
             j.add("Username is required");
             return false;
         }
-
         if (username.length() < 3) {
             j.add("Username must be at least 3 characters");
             return false;
         }
-
         if (username.length() > 20) {
             j.add("Username is too long");
             return false;
         }
-
         if (!e(username)) {
             j.add("Username can only contain letters, numbers, and underscore");
             return false;
         }
-
         return true;
     }
 
-    private boolean c(String password) {
+    // [Deobfuscated] c -> containsUppercaseLetter * checks if a string contains an uppercase letter
+    private boolean containsUppercaseLetter(String inputPassword) {
         // hasUpperCase
-        for (char k : password.toCharArray()) {
-            if (Character.isUpperCase(k)) {
+        for (char character : inputPassword.toCharArray()) {
+            if (Character.isUpperCase(character)) {
                 return true;
             }
         }
@@ -124,7 +115,8 @@ public class i {
         return Pattern.compile("^[a-zA-Z0-9_]+$").matcher(username).matches();
     }
 
-    public List<String> f() {
+    // [Deobfuscated] f -> getErrors * Returns a list of errors from the object 'j'
+    public List<String> getErrors() {
         // getErrors
         return new ArrayList<>(j);
     }

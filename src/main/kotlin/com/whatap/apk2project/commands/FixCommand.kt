@@ -69,6 +69,11 @@ class FixCommand : CliktCommand(
         help = "Translation model name"
     ).default("qwen2.5:7b")
 
+    private val ollamaBaseUrl by option(
+        "--ollama-base-url",
+        help = "Ollama server URL (default: http://localhost:11434). Use this to connect to remote Ollama server."
+    ).default("http://localhost:11434")
+
     override fun run() {
         val sourceDir = findSourceDir(projectPath)
         if (sourceDir == null) {
@@ -133,7 +138,8 @@ class FixCommand : CliktCommand(
             modelName = modelName,
             batchSize = batchSize,
             enableKorean = enableKorean,
-            translationModelName = if (enableKorean) translationModel else null
+            translationModelName = if (enableKorean) translationModel else null,
+            ollamaBaseUrl = ollamaBaseUrl
         )
 
         Logger.info("AI Client: $aiClientType")

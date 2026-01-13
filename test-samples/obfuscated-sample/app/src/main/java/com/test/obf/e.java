@@ -10,19 +10,28 @@ import java.util.Map;
 public class e {
 
     private static e e;
-    private b b;  // DataManager
-    private c c;  // NetworkClient
-    private String f;  // token
-    private long g;  // tokenExpiry
+
+    // DataManager
+    private b b;
+
+    // NetworkClient
+    private c c;
+
+    // token
+    private String f;
+
+    // tokenExpiry
+    private long g;
 
     private e() {
         b = b.b();
-        c = c.c();
+        c = c.getInstanceOrCreate();
         f = null;
         g = 0;
     }
 
-    public static e e() {
+    // [Deobfuscated] e -> getInstance * Provides an instance of the class e, creating it if necessary.
+    public static e getInstance() {
         if (e == null) {
             e = new e();
         }
@@ -31,25 +40,24 @@ public class e {
 
     public boolean a(String username, String password) {
         // login
-        if (!d.i(username)) {
+        if (!d.parseInteger(username)) {
             return false;
         }
-
-        String h = b.e("hashed_pwd");
-        String i = d.a(password);  // md5
-
+        String h = b.getData("hashed_pwd");
+        // md5
+        String i = d.md5HashGenerator(password);
         Map<String, String> j = new HashMap<>();
         j.put("username", username);
         j.put("password", i);
+        c.getInstanceOrCreate("/auth/login", j.toString(), new d.i() {
 
-        c.c("/auth/login", j.toString(), new d.i() {
             @Override
             public void a(String response) {
                 // onSuccess
-                f = k(response, "token");
-                long l = d.j(k(response, "expires_in"));
+                f = parseJsonKey(response, "token");
+                long l = d.parseLongOrZero(parseJsonKey(response, "expires_in"));
                 g = System.currentTimeMillis() + l * 1000;
-                b.a("auth_token", f);
+                b.md5HashGenerator("auth_token", f);
             }
 
             @Override
@@ -59,7 +67,6 @@ public class e {
                 g = 0;
             }
         });
-
         return f != null;
     }
 
@@ -67,41 +74,41 @@ public class e {
         // logout
         f = null;
         g = 0;
-        b.f();  // clearCache
+        // clearCache
+        b.f();
     }
 
     public String c() {
         // getToken
         if (f == null) {
-            f = b.e("auth_token");
+            f = b.getData("auth_token");
         }
-
         if (g > 0 && System.currentTimeMillis() > g) {
             // Token expired
             f = null;
             return null;
         }
-
         return f;
     }
 
     public boolean d() {
         // isAuthenticated
-        return c() != null;
+        return getInstanceOrCreate() != null;
     }
 
-    private String k(String json, String key) {
+    // [Deobfuscated] k -> parseJsonKey * Parses a JSON string and returns the value of a specific key
+    private String parseJsonKey(String inputJson, String searchKey) {
         // parseJsonKey
-        String l = "\"" + key + "\":\"";
-        int m = json.indexOf(l);
-        if (m < 0) {
+        String searchString = "\"" + searchKey + "\":\"";
+        int startIndex = inputJson.indexOf(searchString);
+        if (startIndex < 0) {
             return null;
         }
-        int n = m + l.length();
-        int o = json.indexOf("\"", n);
-        if (o < 0) {
+        int valueStartIndex = startIndex + searchString.length();
+        int valueEndIndex = inputJson.indexOf("\"", valueStartIndex);
+        if (valueEndIndex < 0) {
             return null;
         }
-        return json.substring(n, o);
+        return inputJson.substring(valueStartIndex, valueEndIndex);
     }
 }

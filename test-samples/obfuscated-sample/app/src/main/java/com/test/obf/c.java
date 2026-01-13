@@ -14,17 +14,22 @@ import java.util.concurrent.Executors;
 public class c {
 
     private static c c;
+
     private ExecutorService d;
+
     private String e;
+
     private int f;
 
     private c() {
         d = Executors.newFixedThreadPool(5);
         e = "https://api.example.com";
-        f = 30000;  // timeout
+        // timeout
+        f = 30000;
     }
 
-    public static c c() {
+    // [Deobfuscated] c -> getInstanceOrCreate * Returns an instance of class c, creating it if it doesn't exist yet.
+    public static c getInstanceOrCreate() {
         if (c == null) {
             c = new c();
         }
@@ -34,6 +39,7 @@ public class c {
     public void a(String path, d.i callback) {
         // get
         d.execute(new Runnable() {
+
             @Override
             public void run() {
                 try {
@@ -51,6 +57,7 @@ public class c {
     public void c(String path, String body, d.i callback) {
         // post
         d.execute(new Runnable() {
+
             @Override
             public void run() {
                 try {
@@ -72,12 +79,9 @@ public class c {
         conn.setRequestMethod(method);
         conn.setConnectTimeout(f);
         conn.setReadTimeout(f);
-
         int i = conn.getResponseCode();
         if (i == 200) {
-            BufferedReader j = new BufferedReader(
-                new InputStreamReader(conn.getInputStream())
-            );
+            BufferedReader j = new BufferedReader(new InputStreamReader(conn.getInputStream()));
             StringBuilder k = new StringBuilder();
             String l;
             while ((l = j.readLine()) != null) {
@@ -99,12 +103,9 @@ public class c {
         conn.setReadTimeout(f);
         conn.setDoOutput(true);
         conn.getOutputStream().write(body.getBytes());
-
         int i = conn.getResponseCode();
         if (i == 200) {
-            BufferedReader j = new BufferedReader(
-                new InputStreamReader(conn.getInputStream())
-            );
+            BufferedReader j = new BufferedReader(new InputStreamReader(conn.getInputStream()));
             StringBuilder k = new StringBuilder();
             String l;
             while ((l = j.readLine()) != null) {
@@ -117,7 +118,8 @@ public class c {
         }
     }
 
-    public void d() {
+    // [Deobfuscated] d -> shutdown * Shuts down the object 'd'
+    public void shutdown() {
         // shutdown
         d.shutdown();
     }

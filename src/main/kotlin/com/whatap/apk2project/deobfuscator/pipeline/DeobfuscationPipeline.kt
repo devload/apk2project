@@ -49,7 +49,8 @@ class DeobfuscationPipeline(
         workingDir = sourceDir,
         timeout = config.analysisTimeout,
         modelName = config.modelName,
-        monitor = monitor
+        monitor = monitor,
+        ollamaBaseUrl = config.ollamaBaseUrl  // Ollama 서버 URL 전달
     )
     private val translationClient: TranslationClient? = if (config.enableKorean) {
         TranslationClient(
@@ -1307,7 +1308,8 @@ data class PipelineConfig(
     val enableKorean: Boolean = false,  // 한글 번역 활성화
     val translationModelName: String? = null,  // 번역 모델명 (null이면 qwen2.5:7b 기본값)
     val resume: Boolean = false,  // 이어하기 모드
-    val sessionId: String? = null  // 특정 세션 ID로 이어하기
+    val sessionId: String? = null,  // 특정 세션 ID로 이어하기
+    val ollamaBaseUrl: String = "http://localhost:11434"  // Ollama 서버 URL
 )
 
 data class PipelineStats(

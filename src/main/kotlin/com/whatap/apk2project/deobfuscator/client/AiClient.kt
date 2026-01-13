@@ -61,7 +61,8 @@ object AiClientFactory {
         workingDir: java.io.File? = null,
         timeout: Long = 120_000,
         modelName: String? = null,
-        monitor: ProgressMonitor? = null
+        monitor: ProgressMonitor? = null,
+        ollamaBaseUrl: String = "http://localhost:11434"  // Ollama 서버 URL
     ): AiClient {
         return when (type) {
             AiClientType.CLAUDE -> ClaudeCodeClient(
@@ -75,9 +76,9 @@ object AiClientFactory {
                 timeout = if (timeout > 60_000) 60_000 else timeout  // Codex는 더 빠름
             )
             AiClientType.OLLAMA -> OllamaClient(
-                baseUrl = executablePath ?: "http://localhost:11434",
+                baseUrl = ollamaBaseUrl,  // 명시적으로 ollamaBaseUrl 사용
                 modelName = modelName ?: "deepseek-coder:6.7b",
-                timeout = timeout,  // 10분 timeout 유지
+                timeout = timeout,
                 monitor = monitor
             )
         }
