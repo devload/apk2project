@@ -94,10 +94,10 @@ export default function WorkflowGraph({
   totalResourcesExtracted = 0,
   dependenciesDetected = 0,
 }: WorkflowGraphProps) {
-  // 가로/세로 레이아웃 토글
+  // Horizontal/Vertical layout toggle
   const [isVertical, setIsVertical] = useState(false);
 
-  // 현재 처리 중인 요청들
+  // Currently processing requests
   const analysisRequests = useMemo(() =>
     recentLlmRequests.filter(r => r.requestType === 'analysis').slice(0, batchSize),
     [recentLlmRequests, batchSize]
@@ -108,19 +108,19 @@ export default function WorkflowGraph({
     [recentLlmRequests, batchSize]
   );
 
-  // Phase 3 활성화 여부에 따라 worker 개수 결정
+  // Determine worker count based on Phase 3 activation
   const isPhase3Active = currentPhase.includes('PHASE3_AI_ANALYSIS');
-  const workerCount = isPhase3Active ? batchSize : 1;  // Phase 3 전에는 1개만
+  const workerCount = isPhase3Active ? batchSize : 1;  // Only 1 before Phase 3
 
-  // 노드 동적 생성
+  // Dynamic node generation
   const initialNodes: Node[] = useMemo(() => {
     const nodes: Node[] = [];
 
     if (isVertical) {
-      // 세로 레이아웃
-      const centerX = 700;  // 중심 X 좌표
-      const nodeSpacing = 120;  // 노드 간격
-      const horizontalSpacing = 150;  // 병렬 노드 가로 간격
+      // Vertical layout
+      const centerX = 700;  // Center X coordinate
+      const nodeSpacing = 120;  // Node spacing
+      const horizontalSpacing = 150;  // Horizontal spacing for parallel nodes
 
       // 1. Source Files
       nodes.push({
@@ -247,7 +247,7 @@ export default function WorkflowGraph({
           style: getNodeStyle(qwenQueueSize > 0 ? 'processing' : 'pending'),
         });
 
-        // 6b. Qwen Translation 노드들 (가로 배치)
+        // 6b. Qwen Translation nodes (horizontal layout)
         const qwenY = 830;
         for (let i = 0; i < workerCount; i++) {
           const request = translationRequests[i];
@@ -288,7 +288,7 @@ export default function WorkflowGraph({
         style: getNodeStyle(renameQueueSize > 0 ? 'processing' : 'pending'),
       });
 
-      // 7b. Renamed (집계)
+      // 7b. Renamed (aggregation)
       const successRate = processedMethods > 0
         ? ((renamedMethods / processedMethods) * 100).toFixed(1)
         : '0.0';
@@ -303,7 +303,7 @@ export default function WorkflowGraph({
         sourcePosition: Position.Bottom,
         targetPosition: Position.Top,
         style: getNodeStyle(
-          currentPhase === 'COMPLETE' || renamedMethods > 0 ? 'completed' : 'pending'  // ← Complete 추가
+          currentPhase === 'COMPLETE' || renamedMethods > 0 ? 'completed' : 'pending'  // ← Complete added
         ),
       });
 
@@ -416,7 +416,7 @@ export default function WorkflowGraph({
         style: getNodeStyle(isParse0Active ? 'processing' : parse0Progress > 0 ? 'completed' : 'pending'),
       });
 
-      // 1. Source Files (PARSE 1 시작)
+      // 1. Source Files (PARSE 1 start)
       nodes.push({
         id: 'source',
         data: { label: '📁 Source Files' },
@@ -460,7 +460,7 @@ export default function WorkflowGraph({
         style: getNodeStyle(isPhase2Active ? 'processing' : phase2Progress > 0 ? 'completed' : 'pending'),
       });
 
-      // 4. Leaf Methods (Phase 3 시작점)
+      // 4. Leaf Methods (Phase 3 start point)
       const isPhase3Active = currentPhase.includes('PHASE3_AI_ANALYSIS');
       const leafLabel = isPhase3Active
         ? `🎯 Methods\n${processedMethods}/${leafMethods}\n${phase3Progress.toFixed(1)}%`
@@ -572,7 +572,7 @@ export default function WorkflowGraph({
         ? `💾 Save\nComplete ✓`
         : `💾 Save\nWaiting...`;
 
-      // Phase 5도 Qwen이 없으면 위치 조정
+      // Phase 5 also adjust position if Qwen is not available
       const phase5X = qwenQueueSize !== null ? 2030 : 1810;
 
       nodes.push({
@@ -631,7 +631,7 @@ export default function WorkflowGraph({
     return nodes;
   }, [isVertical, currentPhase, processedMethods, renamedMethods, leafMethods, batchSize, analysisRequests, translationRequests, parsedFiles, totalFilesToParse, phase1Progress, callGraphClasses, totalCallGraphClasses, phase2Progress, callGraphEdges, totalClasses, phase3Progress, workerCount, deepseekQueueSize, qwenQueueSize, renameQueueSize, classDeepseekQueueSize, classQwenQueueSize, classRenameQueueSize, parse0Step, parse0Progress]);
 
-  // 엣지 동적 생성 (간소화된 버전)
+  // Dynamic edge generation (simplified version)
   const initialEdges: Edge[] = useMemo(() => {
     const edges: Edge[] = [];
     const isPhase3Active = currentPhase.includes('PHASE3_AI_ANALYSIS');
@@ -677,7 +677,7 @@ export default function WorkflowGraph({
       markerEnd: { type: MarkerType.ArrowClosed, color: '#00d9ff' }
     });
 
-    // Leaf → DeepSeek (직접 연결)
+    // Leaf → DeepSeek (direct connection)
     edges.push({
       id: 'e-leaf-deepseek',
       source: 'leaf',
@@ -743,7 +743,7 @@ export default function WorkflowGraph({
     return edges;
   }, [currentPhase, renamedMethods, parse0Step, parse0Progress, qwenQueueSize]);
 
-  const containerHeight = isVertical ? '1600px' : '450px';  // 가로 레이아웃은 컴팩트하게
+  const containerHeight = isVertical ? '1600px' : '450px';  // Horizontal layout is compact
 
   return (
     <div style={{ width: '100%', height: containerHeight }} className="bg-slate-900/50 rounded-lg border border-purple-500/20 relative">
@@ -822,7 +822,7 @@ export default function WorkflowGraph({
   );
 }
 
-// 노드 상태별 스타일
+// Node status styles
 function getNodeStyle(status: 'pending' | 'processing' | 'completed') {
   const baseStyle = {
     padding: '12px 20px',
