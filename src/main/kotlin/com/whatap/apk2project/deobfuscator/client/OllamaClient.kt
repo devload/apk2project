@@ -221,6 +221,9 @@ Rules:
 - Analyze the CODE BEHAVIOR, not the method name itself
 - Do NOT simply translate non-English method names to English
 - If method name looks generic (like "meaningfulMethod", "deobfuscatedMethodName"), analyze the actual code logic instead
+- ALWAYS suggest a descriptive name based on BEHAVIOR, never return the original obfuscated name
+- For setter methods: use "setXxx()" pattern (e.g., "setListenerList", "setByteBuffer")
+- For getter methods: use "getXxx()" pattern
 
 IMPORTANT - vars rules:
 - ONLY rename LOCAL VARIABLE DECLARATIONS (e.g., "int i", "String str", "ArrayList arrayList")
