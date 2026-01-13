@@ -33,7 +33,8 @@ class ProgressMonitor(
     val totalClasses = AtomicInteger(0)
     val totalMethods = AtomicInteger(0)
     val leafMethods = AtomicInteger(0)
-    val processedMethods = AtomicInteger(0)
+    val processedMethods = AtomicInteger(0)  // Phase 3: 메서드 처리
+    val processedClasses = AtomicInteger(0)  // Phase 4: 클래스 처리
     val renamedMethods = AtomicInteger(0)
     val failedMethods = AtomicInteger(0)
     val currentIteration = AtomicInteger(0)
@@ -235,6 +236,11 @@ class ProgressMonitor(
         updateStatus()
     }
 
+    fun incrementProcessedClass() {
+        processedClasses.incrementAndGet()
+        updateStatus()
+    }
+
     fun incrementFailed() {
         failedMethods.incrementAndGet()
         updateStatus()
@@ -348,9 +354,16 @@ class ProgressMonitor(
             (callGraphClasses.toDouble() / totalCallGraphClasses * 100).coerceAtMost(100.0)
         } else 0.0
 
-        // Phase 3 진행률 계산 (AI 분석)
+        // Phase 3 진행률 계산 (AI 분석 - 메서드)
         val phase3Prog = if (leafMethods.get() > 0) {
             (processed.toDouble() / leafMethods.get() * 100).coerceAtMost(100.0)
+        } else 0.0
+
+        // Phase 4 진행률 계산 (클래스 리네이밍)
+        val processedClassesCount = processedClasses.get()
+        val totalClassesCount = totalClasses.get()
+        val phase4Prog = if (totalClassesCount > 0) {
+            (processedClassesCount.toDouble() / totalClassesCount * 100).coerceAtMost(100.0)
         } else 0.0
 
         val statusData = ProgressStatus(
@@ -397,7 +410,8 @@ class ProgressMonitor(
             qwenQueueSize = qwenQueueSize,
             renameQueueSize = renameQueueSize,
             pipelineStages = pipelineStages,
-            phase4Progress = phase4Progress,
+            phase4Progress = phase4Prog,
+            processedClasses = processedClassesCount,
             classDeepseekQueueSize = classDeepseekQueueSize,
             classQwenQueueSize = classQwenQueueSize,
             classRenameQueueSize = classRenameQueueSize,
@@ -505,6 +519,7 @@ data class ProgressStatus(
     val totalMethods: Int,
     val leafMethods: Int,
     val processedMethods: Int,
+    val processedClasses: Int = 0,  // Phase 4에서 처리된 클래스 수
     val renamedMethods: Int,
     val failedMethods: Int,
     val currentIteration: Int,

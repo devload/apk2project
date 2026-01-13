@@ -329,20 +329,27 @@ export default function Dashboard() {
       )}
 
       {/* Failed Requests */}
-      {status.recentLlmRequests && status.recentLlmRequests.some(r => !r.success) && (
+      {status.recentLlmRequests && status.recentLlmRequests.length > 0 && (
         <div className="bg-red-900/20 backdrop-blur-sm rounded-lg p-6 mb-8 border border-red-500/20">
           <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
             <span>❌</span> Failed Requests ({status.recentLlmRequests.filter(r => !r.success).length})
           </h2>
-          <div className="space-y-3">
-            {status.recentLlmRequests
-              .filter(r => !r.success)
-              .slice()
-              .reverse()
-              .map((request, index) => (
-                <FailedRequestCard key={index} request={request} />
-              ))}
-          </div>
+          {status.recentLlmRequests.filter(r => !r.success).length > 0 ? (
+            <div className="space-y-3">
+              {status.recentLlmRequests
+                .filter(r => !r.success)
+                .slice()
+                .reverse()
+                .map((request, index) => (
+                  <FailedRequestCard key={index} request={request} />
+                ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-400">
+              <div className="text-4xl mb-2">✅</div>
+              <div>No failed requests - all AI requests are successful!</div>
+            </div>
+          )}
         </div>
       )}
 

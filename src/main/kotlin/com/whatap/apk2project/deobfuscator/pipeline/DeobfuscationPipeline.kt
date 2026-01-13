@@ -1155,6 +1155,9 @@ class DeobfuscationPipeline(
                         }
                     } catch (e: Exception) {
                         logger.error("DeepSeek error for class ${candidate.classNode.className}: ${e.message}")
+                    } finally {
+                        // Phase 4 진행률 추적
+                        monitor.incrementProcessedClass()
                     }
                     delay(config.requestDelay / config.batchSize)
                 }
