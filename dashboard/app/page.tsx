@@ -113,6 +113,7 @@ export default function Dashboard() {
   const [selectedType, setSelectedType] = useState<string>('ALL');  // 필터: ALL, METHOD, CLASS, FIELD, PACKAGE
   const [isPaused, setIsPaused] = useState(false);  // Recent Renames 업데이트 일시정지
   const [pausedRenames, setPausedRenames] = useState<RenameEntry[]>([]);  // 일시정지 시점의 데이터
+  const [activeTab, setActiveTab] = useState<'renames' | 'failed'>('renames');  // 탭 전환
 
   useEffect(() => {
     // Polling - API를 통해 status.json 가져오기
@@ -275,44 +276,53 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Failed Requests */}
-      {status.recentLlmRequests && status.recentLlmRequests.length > 0 && (
-        <div className="bg-red-900/20 backdrop-blur-sm rounded-lg p-6 mb-8 border border-red-500/20">
-          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-            <span>❌</span> Failed Requests ({status.recentLlmRequests.filter(r => !r.success).length})
-          </h2>
-          {status.recentLlmRequests.filter(r => !r.success).length > 0 ? (
-            <div className="space-y-3">
-              {status.recentLlmRequests
-                .filter(r => !r.success)
-                .slice()
-                .reverse()
-                .map((request, index) => (
-                  <FailedRequestCard key={index} request={request} />
-                ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-400">
-              <div className="text-4xl mb-2">✅</div>
-              <div>No failed requests - all AI requests are successful!</div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Recent Renames */}
-      {status.recentRenames && status.recentRenames.length > 0 && (
-        <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 border border-purple-500/20">
+      {/* Renames & Failed Requests Tabs */}
+      {(status.recentRenames && status.recentRenames.length > 0) ||
+       (status.recentLlmRequests && status.recentLlmRequests.length > 0) ? (
+        <div className="bg-slate-800/50 backdrop-blur-sm rounded-lg p-6 mb-8 border border-purple-500/20">
+          {/* Tab Headers */}
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-4">
-              <h2 className="text-xl font-semibold flex items-center gap-2">
-                <span>🔧</span> Recent Renames
-              </h2>
-              {/* Pause/Resume Button */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setActiveTab('renames')}
+                className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${
+                  activeTab === 'renames'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-slate-700/50 text-gray-300 hover:bg-slate-700'
+                }`}
+              >
+                <span>🔧</span>
+                Recent Renames
+                {status.recentRenames && (
+                  <span className="text-xs bg-purple-900/50 px-2 py-0.5 rounded">
+                    {status.recentRenames.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setActiveTab('failed')}
+                className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${
+                  activeTab === 'failed'
+                    ? 'bg-red-600 text-white'
+                    : 'bg-slate-700/50 text-gray-300 hover:bg-slate-700'
+                }`}
+              >
+                <span>❌</span>
+                Failed Requests
+                {status.recentLlmRequests && (
+                  <span className="text-xs bg-red-900/50 px-2 py-0.5 rounded">
+                    {status.recentLlmRequests.filter(r => !r.success).length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Pause/Resume Button (Only show in Renames tab) */}
+            {activeTab === 'renames' && (
               <button
                 onClick={() => {
                   if (!isPaused) {
-                    setPausedRenames([...status.recentRenames]);
+                    setPausedRenames([...(status.recentRenames || [])]);
                   }
                   setIsPaused(!isPaused);
                 }}
@@ -328,45 +338,75 @@ export default function Dashboard() {
                   <><span>⏸</span> Pause</>
                 )}
               </button>
+            )}
+          </div>
+
+          {/* Tab Content: Renames */}
+          {activeTab === 'renames' && status.recentRenames && status.recentRenames.length > 0 && (
+            <>
               {isPaused && (
-                <span className="text-xs text-yellow-400 animate-pulse">
-                  Updates paused - {status.recentRenames.length - pausedRenames.length} new items
-                </span>
+                <div className="mb-3 text-xs text-yellow-400 animate-pulse">
+                  ⚠️ Updates paused - {status.recentRenames.length - pausedRenames.length} new items
+                </div>
               )}
-            </div>
-            {/* Category Filter */}
-            <div className="flex gap-2">
-              {['ALL', 'METHOD', 'CLASS', 'FIELD', 'PACKAGE'].map((type) => {
-                const displayRenames = isPaused ? pausedRenames : status.recentRenames;
-                const count = type === 'ALL'
-                  ? displayRenames.length
-                  : displayRenames.filter(r => r.type === type).length;
-                return (
-                  <button
-                    key={type}
-                    onClick={() => setSelectedType(type)}
-                    className={`px-3 py-1 rounded text-xs font-medium transition-all ${
-                      selectedType === type
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-slate-700/50 text-gray-300 hover:bg-slate-700'
-                    }`}
-                  >
-                    {type} ({count})
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <div className="space-y-3">
-            {(isPaused ? pausedRenames : status.recentRenames)
-              .filter(rename => selectedType === 'ALL' || rename.type === selectedType)
-              .slice().reverse()
-              .map((rename, index) => (
-                <RenameCard key={index} rename={rename} />
-              ))}
-          </div>
+
+              {/* Category Filter */}
+              <div className="flex gap-2 mb-4">
+                {['ALL', 'METHOD', 'CLASS', 'FIELD', 'PACKAGE'].map((type) => {
+                  const displayRenames = isPaused ? pausedRenames : status.recentRenames;
+                  const count = type === 'ALL'
+                    ? displayRenames.length
+                    : displayRenames.filter(r => r.type === type).length;
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => setSelectedType(type)}
+                      className={`px-3 py-1 rounded text-xs font-medium transition-all ${
+                        selectedType === type
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-slate-700/50 text-gray-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {type} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-3">
+                {(isPaused ? pausedRenames : status.recentRenames)
+                  .filter(rename => selectedType === 'ALL' || rename.type === selectedType)
+                  .slice().reverse()
+                  .map((rename, index) => (
+                    <RenameCard key={index} rename={rename} />
+                  ))}
+              </div>
+            </>
+          )}
+
+          {/* Tab Content: Failed Requests */}
+          {activeTab === 'failed' && status.recentLlmRequests && status.recentLlmRequests.length > 0 && (
+            <>
+              {status.recentLlmRequests.filter(r => !r.success).length > 0 ? (
+                <div className="space-y-3">
+                  {status.recentLlmRequests
+                    .filter(r => !r.success)
+                    .slice()
+                    .reverse()
+                    .map((request, index) => (
+                      <FailedRequestCard key={index} request={request} />
+                    ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-400">
+                  <div className="text-4xl mb-2">✅</div>
+                  <div>No failed requests - all AI requests are successful!</div>
+                </div>
+              )}
+            </>
+          )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
