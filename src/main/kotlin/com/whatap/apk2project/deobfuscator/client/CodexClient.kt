@@ -20,7 +20,12 @@ class CodexClient(
     private val logger = LoggerFactory.getLogger(javaClass)
     private val gson = Gson()
 
-    override fun analyzeMethod(method: MethodNode, sourceCode: String): MethodAnalysisResult? {
+    override fun analyzeMethod(
+        method: MethodNode,
+        sourceCode: String,
+        iteration: Int = 1,
+        classSourceCode: String = ""
+    ): MethodAnalysisResult? {
         val prompt = buildMethodPrompt(method, sourceCode)
         val response = executeCodexPrompt(prompt)
         return parseMethodAnalysis(response, method)

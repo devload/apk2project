@@ -9,8 +9,17 @@ import com.whatap.apk2project.deobfuscator.monitor.ProgressMonitor
 interface AiClient {
     /**
      * 단일 메소드 분석
+     * @param method 분석할 메서드
+     * @param sourceCode 메서드 소스 코드
+     * @param iteration ITERATION 번호 (기본값 1)
+     * @param classSourceCode 클래스 컨텍스트 (RETRY 시 사용)
      */
-    fun analyzeMethod(method: MethodNode, sourceCode: String): MethodAnalysisResult?
+    fun analyzeMethod(
+        method: MethodNode,
+        sourceCode: String,
+        iteration: Int = 1,
+        classSourceCode: String = ""
+    ): MethodAnalysisResult?
 
     /**
      * 여러 메소드 일괄 분석

@@ -73,8 +73,19 @@ class OllamaClient(
     /**
      * 단일 메소드 분석 (retry 포함)
      */
-    override fun analyzeMethod(method: MethodNode, sourceCode: String): MethodAnalysisResult? {
-        val prompt = buildCompactPrompt(method, sourceCode)
+    override fun analyzeMethod(
+        method: MethodNode,
+        sourceCode: String,
+        iteration: Int = 1,
+        classSourceCode: String = ""
+    ): MethodAnalysisResult? {
+        // ITERATE 1: 기본 프롬프트
+        // RETRY (iteration >= 2): 클래스 컨텍스트 포함
+        val prompt = if (iteration >= 2 && classSourceCode.isNotEmpty()) {
+            buildEnhancedPromptWithClassContext(method, sourceCode, classSourceCode)
+        } else {
+            buildCompactPrompt(method, sourceCode)
+        }
 
         return executeWithRetry(
             targetName = method.methodName,
@@ -233,6 +244,45 @@ IMPORTANT - vars rules:
 - Example: in "ArrayList list = new ArrayList()", the variable is "list", NOT "ArrayList"
 
 Example: {"name":"calculateTotal","desc":"sums values","reasoning":"indicates calculation","vars":{"i":"counter","str":"result"}}"""
+    }
+
+    /**
+     * Enhanced 프롬프트 (클래스 컨텍스트 포함) - ITERATE 2+에서 사용
+     */
+    @Suppress("UNUSED_PARAMETER")
+    private fun buildEnhancedPromptWithClassContext(
+        method: MethodNode,
+        sourceCode: String,
+        classSourceCode: String
+    ): String {
+        return """Analyze this obfuscated Java method with additional class context. The class source code is provided to help understand the field usage and method relationships.
+
+Target Method:
+```java
+$sourceCode
+```
+
+Class Context (all fields and related methods):
+```java
+${classSourceCode.take(2000)}
+```
+
+Respond with JSON only:
+{
+  "name":"methodName",
+  "desc":"what it does",
+  "reasoning":"why this name",
+  "vars":{"oldVarName":"newVarName"}
+}
+
+Rules:
+- Use the CLASS CONTEXT to understand what fields like f17840 are used for
+- Look at other methods to see how these fields are used
+- ALWAYS suggest a descriptive name based on BEHAVIOR, never return the original obfuscated name
+- For setter methods: use "setXxx()" pattern based on field purpose (e.g., "setByteBuffer" if f17840 is a byte buffer)
+- For getter methods: use "getXxx()" pattern
+
+Example: {"name":"setByteBuffer","desc":"sets the byte buffer field","reasoning":"f17840 is used as buffer in processBytes()","vars":{"list":"buffer"}}"""
     }
 
     /**
