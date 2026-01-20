@@ -39,6 +39,82 @@ class SourceRenamer {
     // 리네임 히스토리
     private val renameHistory = mutableListOf<RenameEntry>()
 
+    // 파일별 기존 이름 캐시 (충돌 감지용)
+    private val existingNamesCache = ConcurrentHashMap<String, MutableSet<String>>()
+
+    /**
+     * 파일에서 기존 메소드 이름들을 추출 (충돌 감지용)
+     */
+    private fun getExistingMethodNames(file: File): Set<String> {
+        return existingNamesCache.getOrPut(file.absolutePath) {
+            val names = mutableSetOf<String>()
+            try {
+                val parseResult = parser.parse(file)
+                if (parseResult.isSuccessful) {
+                    parseResult.result.orElseThrow().findAll(MethodDeclaration::class.java).forEach { method ->
+                        names.add(method.nameAsString)
+                    }
+                }
+            } catch (e: Exception) {
+                logger.debug("Failed to extract method names from ${file.name}: ${e.message}")
+            }
+            names
+        }
+    }
+
+    /**
+     * 리네이밍 충돌 검사
+     *
+     * @return null이면 충돌 없음, 아니면 충돌을 피할 수 있는 대안 이름 제안
+     */
+    fun checkRenameConflict(
+        file: File,
+        originalName: String,
+        newName: String,
+        signature: String
+    ): RenameConflictResult {
+        val existingNames = getExistingMethodNames(file)
+
+        // 원본 이름 제외하고 동일한 이름이 있는지 확인
+        val conflictExists = (existingNames - originalName).any { existing ->
+            existing == newName
+        }
+
+        return if (conflictExists) {
+            // 충돌이 있으면 대안 이름 생성
+            var alternative = newName
+            var suffix = 2
+            while ((existingNames - originalName).contains(alternative)) {
+                alternative = "${newName}$suffix"
+                suffix++
+                if (suffix > 10) {
+                    // 10번 시도 후 포기
+                    return RenameConflictResult(
+                        hasConflict = true,
+                        conflictingName = newName,
+                        suggestedAlternative = null,
+                        reason = "Could not find non-conflicting name after 10 attempts"
+                    )
+                }
+            }
+            RenameConflictResult(
+                hasConflict = true,
+                conflictingName = newName,
+                suggestedAlternative = alternative,
+                reason = "Method name '$newName' already exists in class"
+            )
+        } else {
+            RenameConflictResult(hasConflict = false)
+        }
+    }
+
+    /**
+     * 캐시 무효화 (파일 변경 후 호출)
+     */
+    fun invalidateCache(file: File) {
+        existingNamesCache.remove(file.absolutePath)
+    }
+
     /**
      * 메소드 리네이밍 적용
      *
@@ -70,6 +146,30 @@ class SourceRenamer {
         methodNode: MethodNode,
         analysis: MethodAnalysisResult
     ): RenameResult {
+        // 충돌 검사
+        val conflictResult = checkRenameConflict(
+            file = file,
+            originalName = methodNode.methodName,
+            newName = analysis.suggestedName,
+            signature = methodNode.signature
+        )
+
+        val finalName = if (conflictResult.hasConflict) {
+            if (conflictResult.suggestedAlternative != null) {
+                logger.warn("Rename conflict detected: ${analysis.suggestedName} already exists. Using alternative: ${conflictResult.suggestedAlternative}")
+                conflictResult.suggestedAlternative
+            } else {
+                return RenameResult.Failure("Rename conflict: ${conflictResult.reason}")
+            }
+        } else {
+            analysis.suggestedName
+        }
+
+        // 최종 이름이 원본과 같으면 스킵
+        if (finalName == methodNode.methodName) {
+            return RenameResult.Failure("Final name same as original after conflict resolution")
+        }
+
         val originalContent = file.readText()
 
         return try {
@@ -90,7 +190,7 @@ class SourceRenamer {
                         // 주석 추가
                         val comment = buildMethodComment(
                             originalName = methodNode.methodName,
-                            newName = analysis.suggestedName,
+                            newName = finalName,
                             description = analysis.description,
                             returnDescription = analysis.returnDescription,
                             parameters = analysis.parameters.map { "${it.name}: ${it.description}" }
@@ -98,7 +198,7 @@ class SourceRenamer {
                         n.setComment(LineComment(comment))
 
                         // 메소드 이름 변경
-                        n.setName(analysis.suggestedName)
+                        n.setName(finalName)
 
                         // 로컬 변수 리네이밍 (실제 적용된 것만 반환)
                         if (analysis.localVariables.isNotEmpty()) {
@@ -107,7 +207,7 @@ class SourceRenamer {
 
                         renamed = true
 
-                        logger.info("Renamed method: ${methodNode.methodName} -> ${analysis.suggestedName}")
+                        logger.info("Renamed method: ${methodNode.methodName} -> $finalName")
                         if (actualRenamedVars.isNotEmpty()) {
                             logger.info("  Renamed ${actualRenamedVars.size} local variables: ${actualRenamedVars.keys.joinToString(", ")}")
                         } else if (analysis.localVariables.isNotEmpty()) {
@@ -136,7 +236,7 @@ class SourceRenamer {
                         // 메서드 이름 변경
                         content = content.replace(
                             "\\b${Regex.escape(methodNode.methodName)}\\b".toRegex(),
-                            analysis.suggestedName
+                            finalName
                         )
 
                         // 로컬 변수 변경
@@ -173,11 +273,14 @@ class SourceRenamer {
                     file = file,
                     type = RenameType.METHOD,
                     originalName = methodNode.methodName,
-                    newName = analysis.suggestedName,
+                    newName = finalName,
                     description = analysis.description,
                     className = methodNode.className
                 )
                 renameHistory.add(entry)
+
+                // 캐시 무효화 (파일 변경 후)
+                invalidateCache(file)
 
                 // 실제 적용된 변수 리네임만 반환
                 val actualVarRenamesSimple = actualRenamedVars.mapValues { it.value.suggestedName }
@@ -475,6 +578,12 @@ class SourceRenamer {
 
     /**
      * 다른 파일에서 참조 업데이트
+     *
+     * 지원하는 패턴:
+     * - 메소드 호출: obj.methodName(), methodName()
+     * - 클래스 참조: import, 타입 선언, 제네릭, 배열
+     * - 필드 참조: obj.fieldName, fieldName
+     * - 리플렉션 패턴: getMethod("name"), getField("name")
      */
     fun updateReferences(
         files: List<File>,
@@ -489,47 +598,141 @@ class SourceRenamer {
                 val content = file.readText()
                 if (!content.contains(originalName)) return@forEach
 
-                val parseResult = parser.parse(file)
-                if (!parseResult.isSuccessful) return@forEach
-
-                val cu = parseResult.result.orElseThrow()
+                var newContent = content
                 var modified = false
 
                 when (type) {
                     RenameType.METHOD -> {
-                        cu.accept(object : ModifierVisitor<Void>() {
-                            override fun visit(n: MethodCallExpr, arg: Void?): Visitable {
-                                if (n.nameAsString == originalName) {
-                                    n.setName(newName)
-                                    modified = true
+                        // 1. 일반 메소드 호출 (AST 기반)
+                        val parseResult = parser.parse(file)
+                        if (parseResult.isSuccessful) {
+                            val cu = parseResult.result.orElseThrow()
+                            cu.accept(object : ModifierVisitor<Void>() {
+                                override fun visit(n: MethodCallExpr, arg: Void?): Visitable {
+                                    if (n.nameAsString == originalName) {
+                                        n.setName(newName)
+                                        modified = true
+                                    }
+                                    return super.visit(n, arg)
                                 }
-                                return super.visit(n, arg)
+                            }, null)
+                            if (modified) {
+                                newContent = cu.toString()
                             }
-                        }, null)
-                    }
-                    RenameType.CLASS -> {
-                        // 타입 참조, import 등 업데이트
-                        val newContent = content
-                            .replace("import $originalName", "import $newName")
-                            .replace("$originalName.", "$newName.")
-                            .replace(" $originalName ", " $newName ")
-                            .replace("<$originalName>", "<$newName>")
-                            .replace("($originalName)", "($newName)")
-                        if (newContent != content) {
-                            file.writeText(newContent)
-                            modified = true
+                        }
+
+                        // 2. 리플렉션 패턴 (정규식 기반)
+                        val reflectionPatterns = listOf(
+                            // getMethod("methodName", ...) or getDeclaredMethod("methodName", ...)
+                            Regex("""(getMethod|getDeclaredMethod)\s*\(\s*"${Regex.escape(originalName)}""""),
+                            // Method.invoke(obj, "methodName")
+                            Regex(""""${Regex.escape(originalName)}"\s*\)""")
+                        )
+                        reflectionPatterns.forEach { pattern ->
+                            if (pattern.containsMatchIn(newContent)) {
+                                newContent = newContent.replace(
+                                    "\"$originalName\"",
+                                    "\"$newName\""
+                                )
+                                modified = true
+                            }
                         }
                     }
+                    RenameType.CLASS -> {
+                        // 1. import 문
+                        newContent = newContent.replace(
+                            "import $originalName",
+                            "import $newName"
+                        )
+                        newContent = newContent.replace(
+                            "import ${originalName};",
+                            "import ${newName};"
+                        )
+
+                        // 2. 단순 타입 참조 (단어 경계 사용)
+                        newContent = newContent.replace(
+                            Regex("\\b${Regex.escape(originalName)}\\b(?!\\.)"),
+                            newName
+                        )
+
+                        // 3. 제네릭 타입: List<OldName>, Map<String, OldName>
+                        newContent = newContent.replace(
+                            Regex("<\\s*${Regex.escape(originalName)}\\s*>"),
+                            "<$newName>"
+                        )
+                        newContent = newContent.replace(
+                            Regex(",\\s*${Regex.escape(originalName)}\\s*>"),
+                            ", $newName>"
+                        )
+                        newContent = newContent.replace(
+                            Regex("<\\s*${Regex.escape(originalName)}\\s*,"),
+                            "<$newName, "
+                        )
+
+                        // 4. 배열 타입: OldName[]
+                        newContent = newContent.replace(
+                            Regex("\\b${Regex.escape(originalName)}\\s*\\[\\s*\\]"),
+                            "$newName[]"
+                        )
+
+                        // 5. 인스턴스 생성: new OldName()
+                        newContent = newContent.replace(
+                            Regex("new\\s+${Regex.escape(originalName)}\\s*\\("),
+                            "new $newName("
+                        )
+
+                        // 6. 클래스 리터럴: OldName.class
+                        newContent = newContent.replace(
+                            "${originalName}.class",
+                            "${newName}.class"
+                        )
+
+                        // 7. 리플렉션: Class.forName("OldName"), loadClass("OldName")
+                        newContent = newContent.replace(
+                            "\"$originalName\"",
+                            "\"$newName\""
+                        )
+
+                        // 8. 정적 메소드/필드 참조: OldName.staticMethod()
+                        newContent = newContent.replace(
+                            "${originalName}.",
+                            "${newName}."
+                        )
+
+                        modified = newContent != content
+                    }
                     RenameType.FIELD -> {
-                        cu.accept(object : ModifierVisitor<Void>() {
-                            override fun visit(n: NameExpr, arg: Void?): Visitable {
-                                if (n.nameAsString == originalName) {
-                                    n.setName(newName)
-                                    modified = true
+                        // 1. 일반 필드 참조 (AST 기반)
+                        val parseResult = parser.parse(file)
+                        if (parseResult.isSuccessful) {
+                            val cu = parseResult.result.orElseThrow()
+                            cu.accept(object : ModifierVisitor<Void>() {
+                                override fun visit(n: NameExpr, arg: Void?): Visitable {
+                                    if (n.nameAsString == originalName) {
+                                        n.setName(newName)
+                                        modified = true
+                                    }
+                                    return super.visit(n, arg)
                                 }
-                                return super.visit(n, arg)
+                            }, null)
+                            if (modified) {
+                                newContent = cu.toString()
                             }
-                        }, null)
+                        }
+
+                        // 2. 리플렉션 패턴: getField("fieldName"), getDeclaredField("fieldName")
+                        val reflectionPatterns = listOf(
+                            Regex("""(getField|getDeclaredField)\s*\(\s*"${Regex.escape(originalName)}"""")
+                        )
+                        reflectionPatterns.forEach { pattern ->
+                            if (pattern.containsMatchIn(newContent)) {
+                                newContent = newContent.replace(
+                                    "\"$originalName\"",
+                                    "\"$newName\""
+                                )
+                                modified = true
+                            }
+                        }
                     }
                     RenameType.PACKAGE -> {
                         // 패키지 리네이밍은 renamePackage() 메소드에서 별도 처리
@@ -537,11 +740,8 @@ class SourceRenamer {
                     }
                 }
 
-                if (modified && type != RenameType.CLASS) {
-                    file.writeText(cu.toString())
-                }
-
                 if (modified) {
+                    file.writeText(newContent)
                     updatedFiles.add(file.absolutePath)
                 }
             } catch (e: Exception) {
@@ -763,4 +963,14 @@ data class PackageRenameResult(
     val affectedFiles: List<File> = emptyList(),
     val errors: List<String>? = null,
     val error: String? = null
+)
+
+/**
+ * 리네이밍 충돌 검사 결과
+ */
+data class RenameConflictResult(
+    val hasConflict: Boolean,
+    val conflictingName: String? = null,
+    val suggestedAlternative: String? = null,
+    val reason: String? = null
 )

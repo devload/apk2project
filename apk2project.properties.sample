@@ -1,0 +1,72 @@
+# APK2Project Configuration
+# Copy this file to apk2project.properties and modify as needed
+
+# ==========================================
+# AI Settings
+# ==========================================
+
+# AI client type: ollama, claude, codex
+ai.client=ollama
+
+# Model name (for Ollama: deepseek-coder:6.7b, deepseek-r1, etc.)
+ai.model=deepseek-coder:6.7b
+
+# Ollama server URL
+ai.ollama.url=http://localhost:11434
+
+# Analysis timeout in milliseconds (default: 10 minutes)
+ai.timeout=600000
+
+# Max retries for failed AI requests
+ai.maxRetries=3
+
+# ==========================================
+# Pipeline Settings
+# ==========================================
+
+# Number of parallel workers (recommended: 2-4)
+pipeline.batchSize=2
+
+# AI batch size (number of methods per AI call)
+pipeline.aiBatchSize=5
+
+# Delay between requests in milliseconds
+pipeline.requestDelay=1000
+
+# Use cache for incremental processing
+pipeline.useCache=true
+
+# Enable Korean translation (requires Qwen model)
+pipeline.enableKorean=false
+
+# Translation model (when Korean enabled)
+pipeline.translationModel=qwen2.5:7b
+
+# ==========================================
+# Logging Settings
+# ==========================================
+
+# Log level: DEBUG, INFO, WARN, ERROR
+logging.level=INFO
+
+# Enable file logging
+logging.file.enabled=false
+
+# Log file path
+logging.file.path=logs/apk2project.log
+
+# Enable performance metrics logging
+logging.metrics.enabled=true
+
+# ==========================================
+# Cache Settings
+# ==========================================
+
+# Max methods in memory cache
+cache.maxMemorySize=100
+
+# Max class context entries in cache
+cache.classContext.maxSize=500
+
+# Enable disk-based caching
+cache.disk.enabled=true

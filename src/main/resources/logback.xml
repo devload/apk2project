@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- 콘솔 출력 설정 -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 파일 출력 설정 (일별 롤링) -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/apk2project.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <!-- 일별 롤링 -->
+            <fileNamePattern>logs/apk2project.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <!-- 30일치 보관 -->
+            <maxHistory>30</maxHistory>
+            <!-- 총 크기 제한 -->
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 성능 메트릭 전용 로그 파일 -->
+    <appender name="METRICS" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/metrics.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/metrics.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>7</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- AI 요청/응답 전용 로그 -->
+    <appender name="AI_LOG" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/ai-requests.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/ai-requests.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>7</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 메트릭 로거 -->
+    <logger name="metrics" level="INFO" additivity="false">
+        <appender-ref ref="METRICS"/>
+    </logger>
+
+    <!-- AI 로거 -->
+    <logger name="ai.requests" level="DEBUG" additivity="false">
+        <appender-ref ref="AI_LOG"/>
+    </logger>
+
+    <!-- OllamaClient 로그 레벨 조정 -->
+    <logger name="com.whatap.apk2project.deobfuscator.client.OllamaClient" level="INFO"/>
+
+    <!-- 파이프라인 로그 -->
+    <logger name="com.whatap.apk2project.deobfuscator.pipeline" level="INFO"/>
+
+    <!-- JavaParser 관련 로그 (너무 상세하면 WARN으로) -->
+    <logger name="com.github.javaparser" level="WARN"/>
+
+    <!-- OkHttp 로그 -->
+    <logger name="okhttp3" level="WARN"/>
+
+    <!-- 루트 로거 -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+</configuration>

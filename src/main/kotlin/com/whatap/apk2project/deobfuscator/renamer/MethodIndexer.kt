@@ -35,9 +35,9 @@ class MethodIndexer {
                 .map { it.nameAsString }
                 .orElse("Unknown")
 
-            // 메서드 범위
-            val startLine = 0  // TODO: 구현 필요
-            val endLine = 0    // TODO: 구현 필요
+            // 메서드 범위 - JavaParser의 Range 정보 활용
+            val startLine = method.begin.map { it.line }.orElse(0)
+            val endLine = method.end.map { it.line }.orElse(0)
 
             // 반환 타입
             val returnType = method.typeAsString ?: "void"
@@ -50,12 +50,12 @@ class MethodIndexer {
                 )
             }
 
-            // 로컬 변수
+            // 로컬 변수 - JavaParser의 Range 정보 활용
             val localVariables = method.findAll(VariableDeclarator::class.java).map { varDecl ->
                 VariableInfo(
                     name = varDecl.nameAsString,
                     type = varDecl.typeAsString,
-                    line = 0  // TODO: 구현 필요
+                    line = varDecl.begin.map { it.line }.orElse(0)
                 )
             }
 
