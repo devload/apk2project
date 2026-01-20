@@ -52,27 +52,27 @@ class FixCommand : CliktCommand(
     private val modelName by option(
         "--model",
         help = "Model name (e.g., deepseek-coder:6.7b for Ollama)"
-    ).default("deepseek-coder:6.7b")
+    ).default("deepseek-coder:6.7b")  // 로컬 Ollama 6.7B 모델 (빠름)
 
     private val batchSize by option(
         "--batch-size",
         help = "Number of parallel workers"
-    ).int().default(10)
+    ).int().default(30)  // 로컬 Ollama: 30개 스레드 (6.7B 모델 빠름)
 
     private val enableKorean by option(
         "--korean",
         help = "Enable Korean translation for class/method names"
-    ).flag(default = false)
+    ).flag(default = false)  // 한글 번역 기본 비활성화 (--korean 명시적 사용 필요)
 
     private val translationModel by option(
         "--translation-model",
         help = "Translation model name"
-    ).default("qwen2.5:7b")
+    ).default("qwen2.5:latest")  // 쿠버네티스 Qwen2.5 모델
 
     private val ollamaBaseUrl by option(
         "--ollama-base-url",
         help = "Ollama server URL (default: http://localhost:11434). Use this to connect to remote Ollama server."
-    ).default("http://localhost:11434")
+    ).default("http://localhost:11434")  // 로컬 Ollama 서버
 
     override fun run() {
         val sourceDir = findSourceDir(projectPath)
@@ -88,11 +88,14 @@ class FixCommand : CliktCommand(
             val outputDir = sourceDir.resolve(".apk2project").toFile()
             outputDir.mkdirs()
 
+            // Update output.properties for dashboard
+            updateOutputProperties(sourceDir.toFile())
+
             try {
                 monitor = com.whatap.apk2project.deobfuscator.monitor.ProgressMonitor(outputDir)
                 monitor.currentPhase = com.whatap.apk2project.deobfuscator.monitor.PipelinePhase.INITIALIZING
-                monitor.phase = "Fixing Errors"
-                monitor.status = "Scanning for compilation errors..."
+                monitor.phase = "Initializing"
+                monitor.status = "Starting pipeline..."
                 monitor.start()
 
                 Logger.info("Dashboard: http://localhost:3000 (Next.js)")
@@ -151,7 +154,8 @@ class FixCommand : CliktCommand(
         val pipeline = DeobfuscationPipeline(
             sourceDir = sourceDir.toFile(),
             outputDir = outputDir,
-            config = config
+            config = config,
+            externalMonitor = monitor
         )
 
         // Run pipeline
@@ -195,5 +199,47 @@ class FixCommand : CliktCommand(
         }
 
         return null
+    }
+
+    /**
+     * Update output.properties for Dashboard API
+     */
+    private fun updateOutputProperties(sourceDir: File) {
+        try {
+            val projectRoot = File(System.getProperty("user.dir")).absoluteFile
+            val propertiesFile = projectRoot.resolve("output.properties")
+
+            // Read existing properties
+            val existingContent = if (propertiesFile.exists()) {
+                propertiesFile.readText()
+            } else {
+                "# APK2Project Configuration\n# This file contains project-specific settings (do not commit to Git)\n\n"
+            }
+
+            // Calculate relative path safely
+            val relativePath = try {
+                sourceDir.absoluteFile.relativeTo(projectRoot).path
+            } catch (e: Exception) {
+                // If relative path fails, use absolute path
+                sourceDir.absolutePath
+            }
+
+            val newContent = existingContent.replace(
+                Regex("^output\\.dir=.*$", RegexOption.MULTILINE),
+                "output.dir=$relativePath"
+            )
+
+            // Add line if not exists
+            val finalContent = if (!existingContent.contains("output.dir=")) {
+                newContent + "\noutput.dir=$relativePath\n"
+            } else {
+                newContent
+            }
+
+            propertiesFile.writeText(finalContent)
+            Logger.info("Updated output.properties: output.dir=$relativePath")
+        } catch (e: Exception) {
+            Logger.warn("Failed to update output.properties: ${e.message}")
+        }
     }
 }

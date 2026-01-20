@@ -5,6 +5,7 @@ import com.whatap.apk2project.deobfuscator.client.MethodAnalysisResult
 import com.whatap.apk2project.deobfuscator.model.MethodNode
 import org.slf4j.LoggerFactory
 import java.io.File
+import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -200,22 +201,31 @@ class MethodSourceCache(
      * 소스 코드 파일 경로
      */
     private fun getSourceFile(methodId: String): File {
-        // 해시 기반 분산 (한 디렉토리에 파일 너무 많은 것 방지)
-        val hash = methodId.hashCode()
-        val subDir = String.format("%02x", hash and 0xff)
+        // methodId를 SHA-256 해시로 변환 (파일명 길이 제한 해결)
+        val hash = sha256(methodId)
+        val subDir = hash.substring(0, 2)  // 첫 2글자로 디렉토리 분산
         val subCacheDir = File(cacheDir, "sources/$subDir")
         subCacheDir.mkdirs()
-        return File(subCacheDir, "$methodId.java")
+        return File(subCacheDir, "$hash.java")
     }
 
     /**
      * 분석 결과 파일 경로
      */
     private fun getAnalysisFile(methodId: String): File {
-        val hash = methodId.hashCode()
-        val subDir = String.format("%02x", hash and 0xff)
+        // methodId를 SHA-256 해시로 변환 (파일명 길이 제한 해결)
+        val hash = sha256(methodId)
+        val subDir = hash.substring(0, 2)  // 첫 2글자로 디렉토리 분산
         val subCacheDir = File(cacheDir, "analyses/$subDir")
         subCacheDir.mkdirs()
-        return File(subCacheDir, "$methodId.json")
+        return File(subCacheDir, "$hash.json")
+    }
+
+    /**
+     * SHA-256 해시 생성
+     */
+    private fun sha256(input: String): String {
+        val bytes = MessageDigest.getInstance("SHA-256").digest(input.toByteArray())
+        return bytes.joinToString("") { "%02x".format(it) }
     }
 }

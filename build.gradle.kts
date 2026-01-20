@@ -1,5 +1,6 @@
 plugins {
     kotlin("jvm") version "1.9.21"
+    kotlin("plugin.serialization") version "1.9.21"
     application
 }
 
@@ -31,6 +32,9 @@ dependencies {
 
     // Coroutines for async operations
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+
+    // Serialization for method index
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
 
     // XML Parsing
     implementation("org.jdom:jdom2:2.0.6.1")

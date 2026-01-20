@@ -42,7 +42,8 @@ class DeobfuscationPipeline(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     private val sessionManager = SessionManager(outputDir)
-    private val graphBuilder = MethodCallGraphBuilder()
+    // Initialize with cacheDir for incremental processing support
+    private val graphBuilder = MethodCallGraphBuilder(cacheDir = File(outputDir, ".apk2project/cache"))
     // Use external monitor if provided, otherwise create new one
     private val monitor = externalMonitor ?: ProgressMonitor(outputDir)
     private val aiClient: AiClient = AiClientFactory.create(
@@ -72,6 +73,10 @@ class DeobfuscationPipeline(
     private val processedMethods = ConcurrentHashMap.newKeySet<String>()
     private val analysisResults = ConcurrentHashMap<String, MethodAnalysisResult>()
     private val stats = PipelineStats()
+
+    // Phase 1 → Phase 2 전달용 변경 파일 목록
+    @Volatile
+    private var changedFilesFromPhase1: List<File> = emptyList()
 
     /**
      * 파이프라인 실행
@@ -218,7 +223,12 @@ class DeobfuscationPipeline(
     }
 
     /**
-     * Phase 1: Java 파일 파싱 (캐시 지원)
+     * Phase 1: Java 파일 파싱 (캐시 지원 + 증분 처리)
+     *
+     * 처리 전략:
+     * 1. 캐시가 완전히 유효 (변경 없음) → 캐시에서 로드
+     * 2. 캐시 있고 일부 변경 → 캐시 로드 + 증분 파싱
+     * 3. 캐시 없음 → 전체 파싱
      */
     private fun phase1ParseFiles() {
         logger.info("\n[Phase 1] Parsing source files...")
@@ -227,9 +237,15 @@ class DeobfuscationPipeline(
 
         val cacheFile = config.cacheFile ?: File(outputDir, "callgraph_cache.json")
 
-        // 캐시 사용이 활성화되어 있고, 캐시가 유효한 경우
-        if (config.useCache && graphBuilder.isCacheValid(cacheFile, sourceDir)) {
-            logger.info("✓ Loading from cache: ${cacheFile.absolutePath}")
+        // 캐시 유효성 확인
+        val cacheExists = cacheFile.exists()
+        val isCacheValid = config.useCache && graphBuilder.isCacheValid(cacheFile, sourceDir)
+
+        logger.info("[Cache Check] cacheFile exists=$cacheExists, isCacheValid=$isCacheValid")
+
+        // Case 1: 캐시가 완전히 유효 (변경 없음)
+        if (isCacheValid) {
+            logger.info("✓ No files changed, loading from cache: ${cacheFile.absolutePath}")
             monitor.setPhase("Phase 1", "Loading from cache...")
             val loaded = graphBuilder.loadFromCache(cacheFile)
             if (loaded) {
@@ -237,10 +253,9 @@ class DeobfuscationPipeline(
                 stats.totalMethods = graphBuilder.methods.size
                 logger.info("✓ Loaded ${stats.totalClasses} classes, ${stats.totalMethods} methods from cache")
 
-                // 모니터 통계 업데이트
                 monitor.totalClasses.set(stats.totalClasses)
                 monitor.totalMethods.set(stats.totalMethods)
-                monitor.parsedFiles = stats.totalClasses  // 캐시에서는 정확한 값 없음
+                monitor.parsedFiles = stats.totalClasses
                 monitor.totalCallGraphClasses = stats.totalClasses
                 monitor.callGraphEdges = graphBuilder.callGraph.edgeSet().size
                 return
@@ -248,7 +263,46 @@ class DeobfuscationPipeline(
             logger.warn("Cache load failed, falling back to full parse...")
         }
 
-        // 캐시 없거나 무효한 경우 전체 파싱
+        // Case 2: 캐시 있고 일부 변경 → 증분 처리
+        if (config.useCache && cacheExists) {
+            logger.info("✓ Cache exists, attempting incremental processing...")
+            monitor.setPhase("Phase 1", "Loading cache + incremental parsing...")
+
+            // 먼저 캐시에서 기존 데이터 로드
+            val loaded = graphBuilder.loadFromCache(cacheFile)
+            if (loaded) {
+                logger.info("✓ Loaded ${graphBuilder.classes.size} classes from cache")
+
+                // 증분 파싱 (변경된 파일만)
+                val incrementalResult = graphBuilder.parseFilesIncremental(sourceDir) { current, total ->
+                    monitor.setPhase("Phase 1", "Incremental parsing: $current / $total changed files...")
+                    monitor.parsedFiles = current
+                }
+
+                // Phase 2에서 사용할 변경된 파일 목록 저장
+                changedFilesFromPhase1 = incrementalResult.changedFilesList
+
+                if (incrementalResult.fromCache) {
+                    logger.info("✓ No files changed, using cached data")
+                } else {
+                    logger.info("✓ Incremental: ${incrementalResult.changedFiles} files changed, ${incrementalResult.parsedFiles} reparsed")
+                }
+
+                stats.totalClasses = incrementalResult.classCount
+                stats.totalMethods = incrementalResult.methodCount
+
+                monitor.totalClasses.set(stats.totalClasses)
+                monitor.totalMethods.set(stats.totalMethods)
+                monitor.parsedFiles = incrementalResult.parsedFiles
+                monitor.failedParseFiles = incrementalResult.failedFiles
+                monitor.totalFilesToParse = incrementalResult.totalFiles
+                return
+            }
+            logger.warn("Cache load failed, falling back to full parse...")
+        }
+
+        // Case 3: 캐시 없음 → 전체 파싱
+        logger.info("Full parsing (no cache available)...")
         val parseResult = graphBuilder.parseFilesOnly(sourceDir) { current, total ->
             monitor.totalFilesToParse = total
             monitor.setPhase("Phase 1", "Parsing $current / $total files...")
@@ -261,7 +315,6 @@ class DeobfuscationPipeline(
         logger.info("✓ Parsed ${parseResult.parsedFiles}/${parseResult.totalFiles} files")
         logger.info("✓ Found ${parseResult.classCount} classes, ${parseResult.methodCount} methods")
 
-        // 모니터 통계 업데이트
         monitor.totalClasses.set(stats.totalClasses)
         monitor.totalMethods.set(stats.totalMethods)
         monitor.parsedFiles = parseResult.parsedFiles
@@ -270,17 +323,23 @@ class DeobfuscationPipeline(
     }
 
     /**
-     * Phase 2: Call Graph 구축
+     * Phase 2: Call Graph 구축 (증분 처리 지원)
+     *
+     * 처리 전략:
+     * 1. 캐시가 완전히 유효 (변경 없음) → Call Graph 이미 로드됨, 스킵
+     * 2. Phase 1에서 변경된 파일 있음 → 증분 업데이트 (영향받는 엣지만 재계산)
+     * 3. 캐시 없음 → 전체 Call Graph 빌드
      */
     private fun phase2BuildCallGraph() {
         logger.info("\n[Phase 2] Building call graph...")
         monitor.currentPhase = com.whatap.apk2project.deobfuscator.monitor.PipelinePhase.PHASE2_CALL_GRAPH
         monitor.setPhase("Phase 2", "Building call graph...")
 
-        // 캐시에서 로드한 경우 Call Graph는 이미 구축되어 있음
         val cacheFile = config.cacheFile ?: File(outputDir, "callgraph_cache.json")
-        if (config.useCache && graphBuilder.isCacheValid(cacheFile, sourceDir)) {
-            logger.info("✓ Call graph already loaded from cache")
+
+        // Case 1: 캐시가 완전히 유효 (변경 없음)
+        if (config.useCache && graphBuilder.isCacheValid(cacheFile, sourceDir) && changedFilesFromPhase1.isEmpty()) {
+            logger.info("✓ Call graph already loaded from cache (no changes)")
 
             val leafMethods = graphBuilder.findLeafMethods()
             logger.info("✓ Identified ${leafMethods.size} priority 1 methods (true leaves)")
@@ -289,7 +348,42 @@ class DeobfuscationPipeline(
             return
         }
 
-        // Call Graph 구축
+        // Case 2: Phase 1에서 변경된 파일이 있음 → 증분 업데이트
+        if (config.useCache && changedFilesFromPhase1.isNotEmpty() && graphBuilder.callGraph.vertexSet().isNotEmpty()) {
+            logger.info("✓ Incremental call graph update for ${changedFilesFromPhase1.size} changed files...")
+            monitor.setPhase("Phase 2", "Incremental call graph update...")
+
+            val graphResult = graphBuilder.updateCallGraphIncremental(changedFilesFromPhase1) { current, total ->
+                monitor.callGraphClasses = current
+                monitor.totalCallGraphClasses = total
+                monitor.setPhase("Phase 2", "Incremental update: $current / $total classes...")
+            }
+
+            logger.info("✓ Call graph updated: ${graphResult.methodCount} methods, ${graphResult.edgeCount} edges")
+
+            // 캐시 저장
+            if (config.useCache) {
+                try {
+                    graphBuilder.saveToCache(cacheFile)
+                    logger.info("✓ Cache saved to ${cacheFile.absolutePath}")
+                } catch (e: Exception) {
+                    logger.warn("Failed to save cache: ${e.message}")
+                }
+            }
+
+            // 리프 메소드 수 확인
+            val leafMethods = graphBuilder.findLeafMethods()
+            logger.info("✓ Identified ${leafMethods.size} priority 1 methods (true leaves)")
+
+            monitor.callGraphEdges = graphResult.edgeCount
+            monitor.leafMethods.set(leafMethods.size)
+            monitor.totalCallGraphClasses = graphResult.totalClasses
+            monitor.callGraphClasses = graphResult.processedClasses
+            return
+        }
+
+        // Case 3: 캐시 없음 → 전체 Call Graph 빌드
+        logger.info("Full call graph build...")
         val graphResult = graphBuilder.buildCallGraph { current, total ->
             monitor.totalCallGraphClasses = total
             monitor.callGraphClasses = current
@@ -447,7 +541,7 @@ class DeobfuscationPipeline(
                 queueCounter = deepseekQueueCounter,
                 sourceCache = sourceCache,
                 extractFunc = ::extractMethodSource,
-                analyzeFunc = aiClient::analyzeMethod,
+                analyzeFunc = { method, sourceCode -> aiClient.analyzeMethod(method, sourceCode, 1, "") },
                 nextQueue = qwenQueue,
                 nextQueueCounter = qwenQueueCounter,
                 retryQueue = retryQueue,
@@ -514,6 +608,7 @@ class DeobfuscationPipeline(
                         suggested = analysis.suggestedName,
                         description = analysis.description,
                         reasoning = analysis.reasoning,
+                        confidence = analysis.confidence,
                         className = method.className,
                         filePath = method.file.absolutePath,
                         lineNumber = method.startLine,
@@ -537,8 +632,19 @@ class DeobfuscationPipeline(
             // Producer
             launchProducer(this@coroutineScope, leafMethods, deepseekQueue, deepseekQueueCounter)
 
+            // Real-time queue size monitoring (sync counters to monitor every 100ms)
+            val monitorJob = launch(Dispatchers.IO) {
+                while (isActive) {
+                    monitor.deepseekQueueSize = deepseekQueueCounter.get()
+                    monitor.qwenQueueSize = qwenQueueCounter.get()
+                    monitor.renameQueueSize = renameQueueCounter.get()
+                    delay(100)  // Update every 100ms
+                }
+            }
+
             // Wait for completion
             deepseekJobs.forEach { it.join() }
+            monitorJob.cancel()  // Stop monitoring when DeepSeek completes
             logger.info("DeepSeek stage complete")
             qwenQueue.close()
             qwenJobs.forEach { it.join() }
@@ -558,7 +664,7 @@ class DeobfuscationPipeline(
                 queueCounter = deepseekQueueCounter,
                 sourceCache = sourceCache,
                 extractFunc = ::extractMethodSource,
-                analyzeFunc = aiClient::analyzeMethod,
+                analyzeFunc = { method, sourceCode -> aiClient.analyzeMethod(method, sourceCode, 1, "") },
                 nextQueue = renameQueue,
                 nextQueueCounter = renameQueueCounter,
                 retryQueue = retryQueue,
@@ -613,6 +719,7 @@ class DeobfuscationPipeline(
                         suggested = analysis.suggestedName,
                         description = analysis.description,
                         reasoning = analysis.reasoning,
+                        confidence = analysis.confidence,
                         className = method.className,
                         filePath = method.file.absolutePath,
                         lineNumber = method.startLine,
@@ -636,8 +743,18 @@ class DeobfuscationPipeline(
             // Producer
             launchProducer(this@coroutineScope, leafMethods, deepseekQueue, deepseekQueueCounter)
 
+            // Real-time queue size monitoring (sync counters to monitor every 100ms)
+            val monitorJob = launch(Dispatchers.IO) {
+                while (isActive) {
+                    monitor.deepseekQueueSize = deepseekQueueCounter.get()
+                    monitor.renameQueueSize = renameQueueCounter.get()
+                    delay(100)  // Update every 100ms
+                }
+            }
+
             // Wait for completion
             deepseekJobs.forEach { it.join() }
+            monitorJob.cancel()  // Stop monitoring when DeepSeek completes
             logger.info("DeepSeek stage complete")
             renameQueue.close()
             renameJobs.forEach { it.join() }
@@ -645,11 +762,16 @@ class DeobfuscationPipeline(
 
         logger.info("Rename stage complete")
 
-        // 재시도 큐 처리
-        if (config.enableKorean) {
-            processRetryQueueWithTranslation(this@coroutineScope, retryQueue, retryCount, maxRetries, maxRetryQueueSize, successCount)
-        } else {
-            processRetryQueueSimple(this@coroutineScope, retryQueue, retryCount, maxRetries, maxRetryQueueSize, successCount)
+        // 재시도 큐 처리 (독립적인 scope 사용)
+        val retryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        try {
+            if (config.enableKorean) {
+                processRetryQueueWithTranslation(retryScope, retryQueue, retryCount, maxRetries, maxRetryQueueSize, successCount)
+            } else {
+                processRetryQueueSimple(retryScope, retryQueue, retryCount, maxRetries, maxRetryQueueSize, successCount)
+            }
+        } finally {
+            retryScope.cancel()
         }
 
         successCount.get()
@@ -731,7 +853,8 @@ class DeobfuscationPipeline(
                             return@launch
                         }
 
-                        val analysis = aiClient.analyzeMethod(method, sourceCode)
+                        val currentIteration = retryCount.getOrDefault(method.id, 0) + 1
+                        val analysis = aiClient.analyzeMethod(method, sourceCode, currentIteration, "")
                         if (analysis != null) {
                             sourceCache.putAnalysis(method, analysis)
                             retryQwenQueue.send(method to analysis)
@@ -856,7 +979,7 @@ class DeobfuscationPipeline(
             }
 
             // AI로 분석
-            var analysis = aiClient.analyzeMethod(method, sourceCode)
+            var analysis = aiClient.analyzeMethod(method, sourceCode, 1, "")
             if (analysis == null) {
                 logger.warn("No analysis result for ${method.methodName}")
                 processedMethods.add(method.id)
@@ -1001,6 +1124,7 @@ class DeobfuscationPipeline(
                                 suggested = finalAnalysis.suggestedName,
                                 description = finalAnalysis.description,
                                 reasoning = finalAnalysis.reasoning,
+                                confidence = finalAnalysis.confidence,
                                 className = method.className,
                                 filePath = method.file.absolutePath,
                                 lineNumber = method.startLine,
@@ -1135,7 +1259,6 @@ class DeobfuscationPipeline(
             launch(Dispatchers.IO) {
                 for (candidate in classDeepseekQueue) {
                     classDeepseekQueueCounter.decrementAndGet()
-                    monitor.classDeepseekQueueSize = classDeepseekQueueCounter.get()
 
                     try {
                         logger.debug("DeepSeek analyzing class: ${candidate.classNode.className}")
@@ -1148,7 +1271,6 @@ class DeobfuscationPipeline(
                         if (classAnalysis != null && classAnalysis.suggestedName != candidate.classNode.className) {
                             // Qwen 큐로 전달 (한글 번역)
                             classQwenQueueCounter.incrementAndGet()
-                            monitor.classQwenQueueSize = classQwenQueueCounter.get()
                             classQwenQueue.send(Triple(candidate, classAnalysis.suggestedName, classAnalysis.description))
                         } else {
                             logger.debug("Failed to analyze class ${candidate.classNode.className}")
@@ -1169,7 +1291,6 @@ class DeobfuscationPipeline(
             launch(Dispatchers.IO) {
                 for ((candidate, englishName, description) in classQwenQueue) {
                     classQwenQueueCounter.decrementAndGet()
-                    monitor.classQwenQueueSize = classQwenQueueCounter.get()
 
                     try {
                         logger.debug("Qwen translating class: $englishName")
@@ -1192,7 +1313,6 @@ class DeobfuscationPipeline(
 
                         // Rename 큐로 전달
                         classRenameQueueCounter.incrementAndGet()
-                        monitor.classRenameQueueSize = classRenameQueueCounter.get()
                         classRenameQueue.send(Triple(candidate, koreanName, description))
                     } catch (e: Exception) {
                         logger.error("Qwen translation error for $englishName: ${e.message}")
@@ -1207,7 +1327,6 @@ class DeobfuscationPipeline(
             launch(Dispatchers.IO) {
                 for ((candidate, finalName, description) in classRenameQueue) {
                     classRenameQueueCounter.decrementAndGet()
-                    monitor.classRenameQueueSize = classRenameQueueCounter.get()
 
                     try {
                         val result = renamer.renameClass(
@@ -1246,11 +1365,22 @@ class DeobfuscationPipeline(
         val producerJob = launch(Dispatchers.IO) {
             for (candidate in candidates) {
                 classDeepseekQueueCounter.incrementAndGet()
-                monitor.classDeepseekQueueSize = classDeepseekQueueCounter.get()
                 classDeepseekQueue.send(candidate)
             }
             logger.info("Producer: Sent ${candidates.size} classes to DeepSeek queue")
             classDeepseekQueue.close()
+        }
+
+        // Real-time queue size monitoring (sync counters to monitor every 100ms)
+        val monitorJob = launch(Dispatchers.IO) {
+            while (isActive) {
+                monitor.classDeepseekQueueSize = classDeepseekQueueCounter.get()
+                if (config.enableKorean) {
+                    monitor.classQwenQueueSize = classQwenQueueCounter.get()
+                }
+                monitor.classRenameQueueSize = classRenameQueueCounter.get()
+                delay(100)  // Update every 100ms
+            }
         }
 
         // Producer 완료 대기
@@ -1258,6 +1388,7 @@ class DeobfuscationPipeline(
 
         // DeepSeek 완료 대기
         deepseekJobs.forEach { it.join() }
+        monitorJob.cancel()  // Stop monitoring when DeepSeek completes
         classQwenQueue.close()
         logger.info("DeepSeek workers completed")
 
@@ -1280,16 +1411,30 @@ class DeobfuscationPipeline(
     private fun phase6SaveResults() {
         logger.info("\n[Phase 5] Saving results...")
         monitor.currentPhase = com.whatap.apk2project.deobfuscator.monitor.PipelinePhase.PHASE5_SAVE
-        monitor.setPhase("Phase 5", "Saving results...")
+        monitor.phase5Progress = 0.0
+        monitor.setPhase("Phase 5", "Saving results... (1/3)")
+        monitor.forceUpdate()
 
-        // 리네임 히스토리 저장
+        // Step 1: 리네임 히스토리 저장
+        logger.info("  Step 1/3: Saving rename history...")
         renamer.exportHistory(File(outputDir, "rename_history.md"))
+        monitor.phase5Progress = 33.3
+        monitor.setPhase("Phase 5", "Saving results... (2/3)")
+        monitor.forceUpdate()
 
-        // 매핑 JSON 저장
+        // Step 2: 매핑 JSON 저장
+        logger.info("  Step 2/3: Saving mappings JSON...")
         saveMappingsJson()
+        monitor.phase5Progress = 66.6
+        monitor.setPhase("Phase 5", "Saving results... (3/3)")
+        monitor.forceUpdate()
 
-        // 통계 저장
+        // Step 3: 통계 저장
+        logger.info("  Step 3/3: Saving statistics...")
         saveStats()
+        monitor.phase5Progress = 100.0
+        monitor.setPhase("Phase 5", "Results saved successfully")
+        monitor.forceUpdate()
 
         logger.info("✓ Results saved to ${outputDir.absolutePath}")
     }
@@ -1348,10 +1493,10 @@ data class PipelineConfig(
     val aiClientType: AiClientType = AiClientType.OLLAMA,  // 기본값: Ollama
     val aiExecutablePath: String? = null,  // null이면 기본값 사용
     val modelName: String? = null,         // Ollama 분석 모델명 (예: deepseek-coder:6.7b)
-    val batchSize: Int = 10,               // 병렬 처리 워커 수
+    val batchSize: Int = 2,                // 병렬 처리 워커 수 (사용자 요청: 2개)
     val aiBatchSize: Int = 5,              // AI 배치 분석 단위 (1=개별, 2+=배치)
-    val requestDelay: Long = 1000,
-    val analysisTimeout: Long = 120_000,
+    val requestDelay: Long = 1000,         // 요청 간 지연 (기본값)
+    val analysisTimeout: Long = 600_000,   // 10분 (DeepSeek-R1 reasoning 고려)
     val useCache: Boolean = true,  // 캐시 사용 여부
     val cacheFile: File? = null,   // null이면 기본 위치 사용
     val enableKorean: Boolean = false,  // 한글 번역 활성화

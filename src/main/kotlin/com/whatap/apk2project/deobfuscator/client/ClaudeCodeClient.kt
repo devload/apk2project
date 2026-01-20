@@ -27,8 +27,8 @@ class ClaudeCodeClient(
     override fun analyzeMethod(
         method: MethodNode,
         sourceCode: String,
-        iteration: Int = 1,
-        classSourceCode: String = ""
+        iteration: Int,
+        classSourceCode: String
     ): MethodAnalysisResult? {
         val prompt = buildMethodPrompt(method, sourceCode)
         val response = executeClaudePrompt(prompt)

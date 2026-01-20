@@ -243,6 +243,11 @@ class TranslationWorker(
     scope, workerCount, queue, queueCounter, "Translation"
 ) {
 
+    override fun validate(item: Pair<MethodNode, MethodAnalysisResult>): ValidationResult {
+        // TranslationWorker는 별도의 validation data가 필요 없음
+        return ValidationResult(true, null, Unit)
+    }
+
     override suspend fun processItem(
         item: Pair<MethodNode, MethodAnalysisResult>,
         data: Any?

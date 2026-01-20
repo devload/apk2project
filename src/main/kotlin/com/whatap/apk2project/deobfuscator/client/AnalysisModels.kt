@@ -17,6 +17,7 @@ data class MethodAnalysisResult(
     val suggestedName: String,
     val description: String,
     val reasoning: String = "",
+    val confidence: Float = 0.0f,  // 0.0-1.0 신뢰도
     val returnDescription: String? = null,
     val parameters: List<ParameterInfo> = emptyList(),
     val localVariables: Map<String, VariableRename> = emptyMap(),

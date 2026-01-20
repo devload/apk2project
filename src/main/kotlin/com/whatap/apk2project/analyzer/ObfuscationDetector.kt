@@ -113,7 +113,7 @@ class ObfuscationDetector {
     }
 
     private fun isObfuscatedName(name: String): Boolean {
-        // Common obfuscation patterns
+        // Common obfuscation patterns (uses pre-compiled patterns from companion object)
         return when {
             // Single letter (a, b, c, ...)
             name.length == 1 && name[0].isLetter() -> true
@@ -122,16 +122,16 @@ class ObfuscationDetector {
             name.length == 2 && name.all { it.isLetter() && it.isLowerCase() } -> true
 
             // Letter followed by numbers (a0, b1, ...)
-            name.matches(Regex("[a-z][0-9]+")) -> true
+            LETTER_NUMBER_PATTERN.matches(name) -> true
 
             // Common ProGuard patterns
-            name.matches(Regex("[a-z]{1,3}[A-Z]?[0-9]*")) -> true
+            PROGUARD_PATTERN.matches(name) -> true
 
             // R8 patterns with underscores
-            name.matches(Regex("[a-z]_[a-z]+")) -> true
+            R8_UNDERSCORE_PATTERN.matches(name) -> true
 
             // Names like "C0001" or "C1234abc"
-            name.matches(Regex("[A-Z][0-9]{2,}[a-z]*")) -> true
+            CLASS_NUMBER_PATTERN.matches(name) -> true
 
             else -> false
         }
@@ -192,5 +192,55 @@ class ObfuscationDetector {
             Regex("""\.getBytes\s*\(\s*\)\s*\^\s*"""),          // XOR with bytes
             Regex("""\^\s*0x[0-9a-fA-F]+"""),                   // XOR with hex
         )
+
+        // Pre-compiled obfuscation detection patterns (performance optimization)
+        // Avoids creating new Regex objects on every check
+        private val LETTER_NUMBER_PATTERN = Regex("[a-z][0-9]+")
+        private val PROGUARD_PATTERN = Regex("[a-z]{1,3}[A-Z]?[0-9]*")
+        private val R8_UNDERSCORE_PATTERN = Regex("[a-z]_[a-z]+")
+        private val CLASS_NUMBER_PATTERN = Regex("[A-Z][0-9]{2,}[a-z]*")
+
+        // Obfuscated name/package patterns for external use
+        private val OBFUSCATED_NAME_PATTERN = Regex("^[a-z]{1,2}$|^[A-Z][a-z]?$")
+        private val OBFUSCATED_PACKAGE_PATTERN = Regex("^[a-z]{1,2}(\\.[a-z]{1,2})*$")
+
+        /**
+         * Check if a name appears to be obfuscated (static method for external use)
+         */
+        fun isObfuscatedName(name: String): Boolean {
+            return when {
+                name.length == 1 && name[0].isLetter() -> true
+                name.length == 2 && name.all { it.isLetter() && it.isLowerCase() } -> true
+                LETTER_NUMBER_PATTERN.matches(name) -> true
+                PROGUARD_PATTERN.matches(name) -> true
+                R8_UNDERSCORE_PATTERN.matches(name) -> true
+                CLASS_NUMBER_PATTERN.matches(name) -> true
+                else -> false
+            }
+        }
+
+        /**
+         * Check if a package name appears to be obfuscated (static method for external use)
+         */
+        fun isObfuscatedPackage(packageName: String): Boolean {
+            if (packageName.isEmpty()) return false
+            return OBFUSCATED_PACKAGE_PATTERN.matches(packageName) ||
+                    packageName.split(".").all { it.length <= 2 }
+        }
+
+        // Known non-obfuscated packages
+        private val KNOWN_PACKAGES = setOf(
+            "android", "androidx", "com.google", "com.android",
+            "java", "javax", "kotlin", "kotlinx",
+            "org.apache", "org.json", "io.reactivex", "okhttp3",
+            "retrofit2", "com.squareup", "com.facebook", "com.twitter"
+        )
+
+        /**
+         * Check if this is a known library package (not obfuscated)
+         */
+        fun isKnownPackage(className: String): Boolean {
+            return KNOWN_PACKAGES.any { className.startsWith(it) }
+        }
     }
 }

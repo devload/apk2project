@@ -11,14 +11,14 @@ interface AiClient {
      * 단일 메소드 분석
      * @param method 분석할 메서드
      * @param sourceCode 메서드 소스 코드
-     * @param iteration ITERATION 번호 (기본값 1)
+     * @param iteration ITERATION 번호
      * @param classSourceCode 클래스 컨텍스트 (RETRY 시 사용)
      */
     fun analyzeMethod(
         method: MethodNode,
         sourceCode: String,
-        iteration: Int = 1,
-        classSourceCode: String = ""
+        iteration: Int,
+        classSourceCode: String
     ): MethodAnalysisResult?
 
     /**

@@ -20,21 +20,52 @@ import org.slf4j.LoggerFactory
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantLock
 
 /**
  * 소스 코드의 이름을 변경하고 주석을 추가하는 리네이머
+ *
+ * 파일 단위 락을 사용하여 동시성 문제 방지:
+ * 같은 파일에 있는 메서드들은 순차적으로 리네이밍됨
  */
 class SourceRenamer {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val parser = JavaParser()
+
+    // 파일 단위 락 (경로 -> ReentrantLock)
+    private val fileLocks = ConcurrentHashMap<String, ReentrantLock>()
 
     // 리네임 히스토리
     private val renameHistory = mutableListOf<RenameEntry>()
 
     /**
      * 메소드 리네이밍 적용
+     *
+     * 파일 단위 락을 사용하여 동시성 문제 방지:
+     * 같은 파일에 있는 여러 메서드가 동시에 리네이밍되는 것을 방지
      */
     fun renameMethod(
+        file: File,
+        methodNode: MethodNode,
+        analysis: MethodAnalysisResult
+    ): RenameResult {
+        // 파일별 Lock 가져오기 (없으면 생성)
+        val lock = fileLocks.computeIfAbsent(file.absolutePath) { ReentrantLock() }
+
+        // 파일 락 획득
+        lock.lock()
+        try {
+            return renameMethodImpl(file, methodNode, analysis)
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    /**
+     * 메소드 리네이밍 실제 구현
+     */
+    private fun renameMethodImpl(
         file: File,
         methodNode: MethodNode,
         analysis: MethodAnalysisResult
@@ -89,7 +120,52 @@ class SourceRenamer {
 
             if (renamed) {
                 // 파일 저장
-                file.writeText(cu.toString())
+                logger.info("Saving renamed file: ${file.absolutePath}")
+
+                try {
+                    // 큰 파일(1MB 이상)은 AST 대신 직접 문자열 치환 사용
+                    val fileSizeMB = file.length() / (1024 * 1024)
+                    if (fileSizeMB > 1) {
+                        logger.warn("Large file detected (${fileSizeMB}MB), using direct string replacement instead of AST serialization")
+
+                        val startTime = System.currentTimeMillis()
+
+                        // 직접 문자열 치환
+                        var content = file.readText()
+
+                        // 메서드 이름 변경
+                        content = content.replace(
+                            "\\b${Regex.escape(methodNode.methodName)}\\b".toRegex(),
+                            analysis.suggestedName
+                        )
+
+                        // 로컬 변수 변경
+                        actualRenamedVars.forEach { (oldName, newVar) ->
+                            content = content.replace(
+                                "\\b${Regex.escape(oldName)}\\b".toRegex(),
+                                newVar.suggestedName
+                            )
+                        }
+
+                        file.writeText(content)
+                        val elapsed = System.currentTimeMillis() - startTime
+
+                        logger.info("File saved successfully using string replacement: ${file.absolutePath}, took: ${elapsed}ms")
+                    } else {
+                        // 작은 파일은 AST 사용 (정확도 높음)
+                        val content = cu.toString()
+                        logger.info("Generated AST content, length: ${content.length} chars")
+
+                        val startTime = System.currentTimeMillis()
+                        file.writeText(content)
+                        val elapsed = System.currentTimeMillis() - startTime
+
+                        logger.info("File saved successfully: ${file.absolutePath}, size: ${file.length()} bytes, took: ${elapsed}ms")
+                    }
+                } catch (e: Exception) {
+                    logger.error("Failed to save file: ${file.absolutePath}, error: ${e.message}", e)
+                    throw e
+                }
 
                 // 히스토리 기록
                 val entry = RenameEntry(
@@ -542,7 +618,7 @@ class SourceRenamer {
         // 0. 메소드 파라미터 리네이밍 먼저 처리 (for (Parameter p : method.getParameters()))
         method.parameters.forEach { param ->
             val rename = validRenames[param.nameAsString]
-            if (rename != null) {
+            if (rename != null && rename.suggestedName.isNotEmpty()) {
                 param.setName(rename.suggestedName)
                 logger.debug("  Renamed parameter: ${rename.originalName} -> ${rename.suggestedName}")
             }
@@ -552,7 +628,7 @@ class SourceRenamer {
             // 1. 변수 선언 리네이밍 (int x = 0;)
             override fun visit(n: VariableDeclarator, arg: Void?): Visitable {
                 val rename = validRenames[n.nameAsString]
-                if (rename != null) {
+                if (rename != null && rename.suggestedName.isNotEmpty()) {
                     n.setName(rename.suggestedName)
                     logger.debug("  Renamed variable declaration: ${rename.originalName} -> ${rename.suggestedName}")
                 }
@@ -564,7 +640,7 @@ class SourceRenamer {
                 val variable = n.variable.variables.firstOrNull()
                 if (variable != null) {
                     val rename = validRenames[variable.nameAsString]
-                    if (rename != null) {
+                    if (rename != null && rename.suggestedName.isNotEmpty()) {
                         variable.setName(rename.suggestedName)
                         logger.debug("  Renamed foreach variable: ${rename.originalName} -> ${rename.suggestedName}")
                     }
@@ -576,7 +652,7 @@ class SourceRenamer {
             override fun visit(n: CatchClause, arg: Void?): Visitable {
                 val param = n.parameter
                 val rename = validRenames[param.nameAsString]
-                if (rename != null) {
+                if (rename != null && rename.suggestedName.isNotEmpty()) {
                     param.setName(rename.suggestedName)
                     logger.debug("  Renamed catch parameter: ${rename.originalName} -> ${rename.suggestedName}")
                 }
@@ -586,7 +662,7 @@ class SourceRenamer {
             // 4. 변수 사용 리네이밍 (x + 1)
             override fun visit(n: NameExpr, arg: Void?): Visitable {
                 val rename = validRenames[n.nameAsString]
-                if (rename != null) {
+                if (rename != null && rename.suggestedName.isNotEmpty()) {
                     n.setName(rename.suggestedName)
                     logger.debug("  Renamed variable usage: ${rename.originalName} -> ${rename.suggestedName}")
                 }

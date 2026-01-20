@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit
 class OllamaClient(
     private val baseUrl: String = "http://localhost:11434",
     private val modelName: String = "deepseek-coder:6.7b",
-    private val timeout: Long = 1_200_000,  // 20분 (CPU 모드 고려)
+    private val timeout: Long = 600_000,  // 10분 (DeepSeek-R1 reasoning 고려)
     private val monitor: ProgressMonitor? = null,
     private val maxRetries: Int = 3,  // 최대 재시도 횟수
     private val retryDelayMs: Long = 1000  // 재시도 간 대기 시간
@@ -81,8 +81,8 @@ class OllamaClient(
     override fun analyzeMethod(
         method: MethodNode,
         sourceCode: String,
-        iteration: Int = 1,
-        classSourceCode: String = ""
+        iteration: Int,
+        classSourceCode: String
     ): MethodAnalysisResult? {
         return executeWithRetry(
             targetName = method.methodName,
@@ -113,11 +113,15 @@ class OllamaClient(
         sourceCode: String? = null,
         classSourceCode: String = ""
     ): MethodAnalysisResult? {
+        logger.info("[OllamaClient] Starting $requestType for $targetName | Iteration: $initialIteration | MaxRetries: $maxRetries")
+
         var result: MethodAnalysisResult? = null
         var currentIteration = initialIteration
         var classSource = classSourceCode  // 초기 클래스 소스
 
         repeat(maxRetries) { attempt ->
+            logger.debug("[OllamaClient] Attempt ${attempt + 1}/$maxRetries | Current Iteration: $currentIteration | Target: $targetName")
+
             try {
                 // ITERATION에 따른 프롬프트 선택
                 // iteration=2이면 자동으로 클래스 소스 로드 시도
@@ -125,14 +129,19 @@ class OllamaClient(
                     when {
                         currentIteration >= 2 && classSource.isEmpty() && method.file != null -> {
                             // 클래스 소스를 아직 읽지 않았음 → 읽기 시도
-                            logger.info("Iteration $currentIteration: Loading class context for retry...")
+                            logger.info("[OllamaClient] Iteration $currentIteration: Loading class context for $targetName...")
                             classSource = method.file.readText().take(3000)  // 최대 3000자
+                            logger.debug("[OllamaClient] Class context loaded: ${classSource.length} chars")
                             buildEnhancedPromptWithClassContext(method, sourceCode, classSource)
                         }
-                        currentIteration >= 2 && classSource.isNotEmpty() ->
+                        currentIteration >= 2 && classSource.isNotEmpty() -> {
+                            logger.debug("[OllamaClient] Using enhanced prompt with class context for $targetName")
                             buildEnhancedPromptWithClassContext(method, sourceCode, classSource)
-                        else ->
+                        }
+                        else -> {
+                            logger.debug("[OllamaClient] Using compact prompt for $targetName")
                             buildCompactPrompt(method, sourceCode)
+                        }
                     }
                 } else {
                     // 클래스/패키지 분석용 프롬프트
@@ -143,20 +152,40 @@ class OllamaClient(
                     }
                 }
 
+                logger.debug("[OllamaClient] Prompt size: ${prompt.length} chars | Preview: ${prompt.take(100)}...")
+
                 val startTime = System.currentTimeMillis()
+                logger.info("[OllamaClient] Calling Ollama API | Model: $modelName | Target: $targetName")
+
                 val response = callOllama(prompt)
+
                 val duration = System.currentTimeMillis() - startTime
+                logger.info("[OllamaClient] Ollama response received | Duration: ${duration}ms | Size: ${response.length} chars")
 
                 result = if (method != null) {
+                    logger.debug("[OllamaClient] Parsing method analysis response...")
                     parseMethodAnalysis(response, method)
                 } else {
                     null // TODO: 클래스/패키지 분석
                 }
 
                 // 성공 조건: result가 null이 아니고 suggestedName이 원본과 다름
-                val success = result != null && (method?.methodName == null || result.suggestedName != method.methodName)
+                val parsedResult = result  // Smart cast를 위한 로컬 복사
+                val success = parsedResult != null && (method?.methodName == null || parsedResult.suggestedName != method.methodName)
+
+                if (success) {
+                    logger.info("[OllamaClient] ✓ SUCCESS | Target: $targetName | Old: ${method?.methodName} | New: ${parsedResult?.suggestedName} | Confidence: ${parsedResult?.confidence} | Duration: ${duration}ms")
+                } else {
+                    when {
+                        parsedResult == null -> logger.warn("[OllamaClient] ✗ PARSE FAILED | Target: $targetName | Attempt: ${attempt + 1}/$maxRetries")
+                        method != null && parsedResult.suggestedName == method.methodName -> {
+                            logger.warn("[OllamaClient] ✗ NAME UNCHANGED | Target: $targetName | Suggested: ${parsedResult.suggestedName} | Attempt: ${attempt + 1}/$maxRetries")
+                        }
+                    }
+                }
 
                 // Always log the request (both success and failure)
+                val confidence = if (success) parsedResult?.confidence ?: 0.0f else 0.0f
                 monitor?.addLlmRequest(
                     methodName = targetName,
                     requestType = requestType,
@@ -165,32 +194,35 @@ class OllamaClient(
                     response = response.take(500),
                     durationMs = duration,
                     success = success,
+                    confidence = confidence,
                     iteration = currentIteration
                 )
 
                 if (success) {
-                    return@repeat  // 성공 시 반복 종료
+                    return result  // 성공 시 결과 반환 (중요: result가 null이 아니라는 것이 보장됨)
                 } else {
                     when {
-                        result == null -> logger.warn("Attempt ${attempt + 1}/$maxRetries (iter=$currentIteration): Parse failed for $targetName")
-                        method != null && result.suggestedName == method.methodName ->
+                        parsedResult == null -> logger.warn("Attempt ${attempt + 1}/$maxRetries (iter=$currentIteration): Parse failed for $targetName")
+                        method != null && parsedResult.suggestedName == method.methodName ->
                             logger.warn("Attempt ${attempt + 1}/$maxRetries (iter=$currentIteration): Method name unchanged ($targetName)")
                     }
                     currentIteration++  // 다음 시도를 위해 iteration 증가
                 }
             } catch (e: Exception) {
-                logger.error("Attempt ${attempt + 1}/$maxRetries (iter=$currentIteration): Exception during $requestType for $targetName: ${e.message}")
+                logger.error("[OllamaClient] ✗ EXCEPTION | Attempt: ${attempt + 1}/$maxRetries | Target: $targetName | Error: ${e.message} | Type: ${e.javaClass.simpleName}")
+                logger.debug("[OllamaClient] Stack trace:", e)
                 currentIteration++
             }
 
             // 마지막 시도가 아니면 대기
             if (attempt < maxRetries - 1) {
+                logger.debug("[OllamaClient] Waiting ${retryDelayMs}ms before retry...")
                 Thread.sleep(retryDelayMs)
             }
         }
 
         // 모든 재시도 실패
-        logger.error("Failed to $requestType $targetName after $maxRetries attempts (final iteration=$currentIteration)")
+        logger.error("[OllamaClient] ✗ ALL RETRIES FAILED | Target: $targetName | Attempts: $maxRetries | Final Iteration: $currentIteration")
         return null
     }
 
@@ -287,25 +319,46 @@ class OllamaClient(
     private fun buildCompactPrompt(method: MethodNode, sourceCode: String): String {
         return """Analyze this obfuscated Java method. Suggest meaningful names for the method and local variables.
 
+Current method name: ${method.methodName}
+
 ```java
 $sourceCode
 ```
 
-Respond with JSON only:
+IMPORTANT INSTRUCTIONS FOR DEEPSEEK-R1:
+1. You MAY think through this problem step-by-step in your thinking process
+2. However, your FINAL ANSWER in the 'response' field MUST be valid JSON only
+3. Do NOT include your reasoning in the final response - only the JSON
+4. The format below is the ONLY acceptable format for your final answer
+
+Your final answer must be EXACTLY this JSON format (nothing else):
 {
-  "name":"methodName",
+  "name":"NEW_MEANINGFUL_NAME",
   "desc":"what it does",
   "reasoning":"why this name",
+  "confidence":0.85,
   "vars":{"oldVarName":"newVarName"}
 }
 
 Rules:
+- Current name is "${method.methodName}" - you MUST suggest a DIFFERENT, descriptive name
 - Analyze the CODE BEHAVIOR, not the method name itself
+- Do NOT simply return the original name "${method.methodName}"
 - Do NOT simply translate non-English method names to English
 - If method name looks generic (like "meaningfulMethod", "deobfuscatedMethodName"), analyze the actual code logic instead
-- ALWAYS suggest a descriptive name based on BEHAVIOR, never return the original obfuscated name
+- ALWAYS suggest a descriptive name based on BEHAVIOR
 - For setter methods: use "setXxx()" pattern (e.g., "setListenerList", "setByteBuffer")
 - For getter methods: use "getXxx()" pattern
+- confidence: 0.0-1.0 (how confident are you? 1.0 = very certain, 0.5 = uncertain, 0.3 = guessing)
+
+CRITICAL - DO NOT use obfuscated type names:
+- If you see patterns like "AbstractC1234", "C5678", "ClassXYZ", "f9999", these are OBFUSCATED names
+- DO NOT suggest names like "getAbstractC1234()", "getC5678()", "setFieldF9999()"
+- Instead, infer meaning from BEHAVIOR and CONTEXT:
+  - "AbstractC1234" → "secureElement", "cryptoContext", "keyStore", "paymentData" etc.
+  - "f17900" → "buffer", "config", "state", "instance" etc.
+- Use domain-specific terms: "secure", "crypto", "encryption", "auth", "token", "session", "transaction", "payment"
+- Example: If method returns "AbstractC6886" in a payment processing class, name it "getPaymentData()" NOT "getAbstractC6886()"
 
 IMPORTANT - vars rules:
 - ONLY rename LOCAL VARIABLE DECLARATIONS (e.g., "int i", "String str", "ArrayList arrayList")
@@ -314,7 +367,11 @@ IMPORTANT - vars rules:
 - If no variables need renaming, use empty object: "vars":{}
 - Example: in "ArrayList list = new ArrayList()", the variable is "list", NOT "ArrayList"
 
-Example: {"name":"calculateTotal","desc":"sums values","reasoning":"indicates calculation","vars":{"i":"counter","str":"result"}}"""
+Good examples:
+- BAD: "getAbstractC6886()", "getC1234Field()"
+- GOOD: "getSecureElement()", "getCryptoContext()", "getKeyStore()"
+
+Example: {"name":"calculateTotal","desc":"sums values","reasoning":"indicates calculation","confidence":0.9,"vars":{"i":"counter","str":"result"}}"""
     }
 
     /**
@@ -328,6 +385,8 @@ Example: {"name":"calculateTotal","desc":"sums values","reasoning":"indicates ca
     ): String {
         return """Analyze this obfuscated Java method with additional class context. The class source code is provided to help understand the field usage and method relationships.
 
+Current method name: ${method.methodName} - you MUST suggest a DIFFERENT name
+
 Target Method:
 ```java
 $sourceCode
@@ -338,22 +397,38 @@ Class Context (all fields and related methods):
 ${classSourceCode.take(2000)}
 ```
 
-Respond with JSON only:
+IMPORTANT INSTRUCTIONS FOR DEEPSEEK-R1:
+1. You MAY think through this problem step-by-step in your thinking process
+2. However, your FINAL ANSWER in the 'response' field MUST be valid JSON only
+3. Do NOT include your reasoning in the final response - only the JSON
+4. The format below is the ONLY acceptable format for your final answer
+
+Your final answer must be EXACTLY this JSON format (nothing else):
 {
-  "name":"methodName",
+  "name":"NEW_MEANINGFUL_NAME",
   "desc":"what it does",
   "reasoning":"why this name",
+  "confidence":0.85,
   "vars":{"oldVarName":"newVarName"}
 }
 
 Rules:
+- Current name is "${method.methodName}" - you MUST suggest a DIFFERENT, descriptive name
+- Do NOT return the original name "${method.methodName}"
 - Use the CLASS CONTEXT to understand what fields like f17840 are used for
 - Look at other methods to see how these fields are used
-- ALWAYS suggest a descriptive name based on BEHAVIOR, never return the original obfuscated name
+- ALWAYS suggest a descriptive name based on BEHAVIOR
 - For setter methods: use "setXxx()" pattern based on field purpose (e.g., "setByteBuffer" if f17840 is a byte buffer)
 - For getter methods: use "getXxx()" pattern
 
-Example: {"name":"setByteBuffer","desc":"sets the byte buffer field","reasoning":"f17840 is used as buffer in processBytes()","vars":{"list":"buffer"}}"""
+CRITICAL - DO NOT use obfuscated type/field names:
+- If you see patterns like "AbstractC1234", "C5678", "f9999", these are OBFUSCATED names
+- DO NOT suggest names like "getAbstractC1234()", "setF9999()"
+- Use class context to infer meaning: what is f17840 used for? What does AbstractC6886 represent?
+- Use domain-specific terms: "secure", "crypto", "encryption", "auth", "token", "session", "transaction", "payment", "buffer", "config", "state"
+- Example: If method returns "AbstractC6886" and class shows it's used in payment processing, name it "getPaymentData()" NOT "getAbstractC6886()"
+
+Example: {"name":"setSecureElement","desc":"sets the security element field","reasoning":"f17840 stores encryption keys based on initializeKey() method","vars":{"list":"buffer"}}"""
     }
 
     /**
@@ -442,6 +517,7 @@ Example: {"name":"com.example.api","desc":"API layer for network operations","re
      * Ollama API 호출
      */
     private fun callOllama(prompt: String): String {
+        logger.info("[TRACE] callOllama() ENTER - prompt length: ${prompt.length}, model: $modelName")
         try {
             val requestBody = mapOf(
                 "model" to modelName,
@@ -449,7 +525,7 @@ Example: {"name":"com.example.api","desc":"API layer for network operations","re
                 "stream" to false,
                 "options" to mapOf(
                     "temperature" to 0.1,  // 낮은 온도로 일관성 유지
-                    "num_predict" to 2048,  // DeepSeek-R1 reasoning을 위한 충분한 토큰
+                    "num_predict" to -1,  // 모델이 자체 최대 토큰까지 사용 (JSON 잘림 방지)
                     "top_p" to 0.9
                     // stop 제거: JSON 파싱은 extractJson이 처리
                 )
@@ -463,18 +539,55 @@ Example: {"name":"com.example.api","desc":"API layer for network operations","re
                 .post(body)
                 .build()
 
+            logger.info("[TRACE] Sending HTTP request to Ollama...")
             httpClient.newCall(request).execute().use { response ->
+                logger.info("[TRACE] HTTP response received: code=${response.code}, successful=${response.isSuccessful}")
+
                 if (!response.isSuccessful) {
-                    logger.warn("Ollama request failed: ${response.code}")
+                    logger.error("[ERROR] Ollama request failed: HTTP ${response.code}")
                     return ""
                 }
 
                 val responseBody = response.body?.string() ?: ""
-                val jsonResponse = JsonParser.parseString(responseBody).asJsonObject
-                return jsonResponse.get("response")?.asString ?: ""
+                logger.info("[TRACE] Response body length: ${responseBody.length}, isBlank=${responseBody.isBlank()}")
+
+                // Debug: 응답이 비어있는 경우 원인 출력
+                if (responseBody.isBlank()) {
+                    logger.error("[ERROR] Ollama returned empty response body")
+                    return ""
+                }
+
+                try {
+                    val jsonResponse = JsonParser.parseString(responseBody).asJsonObject
+
+                    // DeepSeek-R1: response 필드가 비어있으면 thinking 필드 확인
+                    var ollamaResponse = jsonResponse.get("response")?.asString
+
+                    if (ollamaResponse.isNullOrBlank()) {
+                        val thinking = jsonResponse.get("thinking")?.asString
+                        if (!thinking.isNullOrBlank()) {
+                            logger.info("[TRACE] 'response' field is empty, using 'thinking' field instead (length: ${thinking.length})")
+                            ollamaResponse = thinking
+                        }
+                    }
+
+                    logger.info("[TRACE] Extracted response: isNull=${ollamaResponse == null}, isBlank=${ollamaResponse.isNullOrBlank()}")
+
+                    if (ollamaResponse.isNullOrBlank()) {
+                        logger.error("[ERROR] Ollama response and thinking fields are both null/blank. Full response: ${responseBody.take(500)}")
+                        return ""
+                    }
+
+                    logger.info("[TRACE] callOllama() SUCCESS - response length: ${ollamaResponse.length}, preview: ${ollamaResponse.take(100)}")
+                    return ollamaResponse
+                } catch (e: Exception) {
+                    logger.error("[ERROR] Failed to parse Ollama response: ${e.message}. Response: ${responseBody.take(500)}")
+                    return ""
+                }
             }
         } catch (e: Exception) {
-            logger.error("Ollama API call failed: ${e.message}", e)
+            logger.error("[ERROR] Ollama API call failed with exception: ${e.message}", e)
+            logger.error("[ERROR] Exception type: ${e.javaClass.name}")
             return ""
         }
     }
@@ -483,25 +596,42 @@ Example: {"name":"com.example.api","desc":"API layer for network operations","re
      * 응답 파싱 - 로컬 변수 포함
      */
     private fun parseMethodAnalysis(response: String, method: MethodNode): MethodAnalysisResult? {
+        logger.info("[TRACE] parseMethodAnalysis() ENTER - method: ${method.methodName}, response length: ${response.length}, isBlank: ${response.isBlank()}")
         return try {
             if (response.isBlank()) {
-                logger.warn("Empty response from Ollama for method ${method.methodName}")
+                logger.error("[ERROR] Empty response from Ollama for method ${method.methodName}")
                 return null
             }
 
             val jsonStr = extractJson(response)
             if (jsonStr == null) {
-                logger.warn("No JSON found in response for ${method.methodName}. Response: ${response.take(200)}")
+                logger.error("[ERROR] No JSON found in response for ${method.methodName}. Response: ${response.take(200)}")
                 return null
             }
 
             val json = JsonParser.parseString(jsonStr).asJsonObject
 
+            // 이름 필드 필수 체크
+            val suggestedName = json.get("name")?.asString
+            logger.info("[TRACE] Extracted suggestedName: $suggestedName")
+            if (suggestedName.isNullOrBlank()) {
+                logger.error("[ERROR] Missing or empty 'name' field in response for ${method.methodName}. Response: ${response.take(200)}")
+                return null
+            }
+
+            // 제안된 이름이 원본 이름과 같으면 실패 처리 (LLM이 제대로 분석하지 못함)
+            if (suggestedName == method.methodName) {
+                logger.warn("[WARN] LLM returned the same obfuscated name '${method.methodName}' for ${method.methodName}. Response: ${response.take(200)}")
+                return null
+            }
+
             // 로컬 변수 파싱
             val localVars = mutableMapOf<String, VariableRename>()
             json.get("vars")?.asJsonObject?.let { varsObj ->
+                logger.info("[TRACE] Found 'vars' field with ${varsObj.size()} entries")
                 varsObj.entrySet().forEach { (oldName, newNameElement) ->
                     val newName = newNameElement.asString
+                    logger.info("[TRACE]   Variable: $oldName → $newName")
                     if (oldName != newName) {  // 실제로 변경되는 경우만
                         localVars[oldName] = VariableRename(
                             originalName = oldName,
@@ -510,17 +640,20 @@ Example: {"name":"com.example.api","desc":"API layer for network operations","re
                         )
                     }
                 }
-            }
+            } ?: logger.info("[TRACE] No 'vars' field in response")
 
+            logger.info("[TRACE] parseMethodAnalysis() SUCCESS - suggestedName: $suggestedName, localVars: ${localVars.size}")
             MethodAnalysisResult(
                 methodId = method.id,
-                suggestedName = json.get("name")?.asString ?: method.methodName,
+                suggestedName = suggestedName,  // null이 아니라는 것이 보장됨
                 description = json.get("desc")?.asString ?: "",
                 reasoning = json.get("reasoning")?.asString ?: "",
+                confidence = json.get("confidence")?.asFloat ?: 0.5f,  // 기본값 0.5
                 localVariables = localVars
             )
         } catch (e: Exception) {
-            logger.warn("Failed to parse Ollama response for ${method.methodName}: ${e.message}. Response: ${response.take(200)}")
+            logger.error("[ERROR] Failed to parse Ollama response for ${method.methodName}: ${e.message}. Response: ${response.take(200)}")
+            logger.error("[ERROR] Exception type: ${e.javaClass.name}")
             null
         }
     }
@@ -622,11 +755,19 @@ Example: {"name":"com.example.api","desc":"API layer for network operations","re
      * DeepSeek-R1의 <think> 태그 제거 포함
      */
     private fun extractJson(text: String): String? {
-        // DeepSeek-R1의 <think>...</think> 태그 제거
-        val cleanedText = text
-            .replace(Regex("<think>[\\s\\S]*?</think>"), "")
-            .replace(Regex("<think>[\\s\\S]*"), "")  // 닫히지 않은 <think> 태그도 제거
-            .trim()
+        // DeepSeek-R1의 <think>...</think> 태그 제거 (다양한 형태 지원)
+        var cleanedText = text
+
+        // 완전한 태그 제거: <think>...</think> 또는 <｜begin▁of▁thinking｜>...</think>
+        cleanedText = cleanedText.replace(Regex("<think>[\\s\\S]*?</think>", RegexOption.DOT_MATCHES_ALL), "")
+        cleanedText = cleanedText.replace(Regex("<\\|.*?\\|>[\\s\\S]*?</think>", RegexOption.DOT_MATCHES_ALL), "")
+
+        // 잘린 태그 제거: <｜begi 또는 <think... (중간에 잘린 경우)
+        cleanedText = cleanedText.replace(Regex("<\\|[^|\\s]*"), "")  // <｜... 또는 <｜begi 제거
+        cleanedText = cleanedText.replace(Regex("<think[^>]*"), "")  // <think... 시작 부분 제거
+        cleanedText = cleanedText.replace(Regex("▁of▁thinking[^\\s|]*"), "")  // ▁of▁thinking... 제거
+
+        cleanedText = cleanedText.trim()
 
         val start = cleanedText.indexOf("{")
         if (start == -1) return null

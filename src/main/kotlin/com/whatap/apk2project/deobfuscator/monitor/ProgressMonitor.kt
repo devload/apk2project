@@ -4,8 +4,10 @@ import com.google.gson.GsonBuilder
 import com.whatap.apk2project.deobfuscator.monitor.gpu.GpuSampler
 import com.whatap.apk2project.deobfuscator.monitor.gpu.GpuSamplerFactory
 import com.whatap.apk2project.deobfuscator.monitor.gpu.GpuInfo
+import com.whatap.apk2project.utils.Logger
 import java.io.File
 import java.lang.management.ManagementFactory
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -21,12 +23,12 @@ class ProgressMonitor(
     private val outputDir: File,
     private val gpuSampler: GpuSampler = GpuSamplerFactory.create()
 ) {
-    private val gson = GsonBuilder()
-        .setPrettyPrinting()
-        .serializeNulls()
-        .serializeSpecialFloatingPointValues()  // NaN, Infinity 허용
-        .create()
-    private val statusFile = File(outputDir, "status.json")
+    // 파일 저장은 StatusFileStorage에 위임
+    private val storage = StatusFileStorage(
+        statusFile = File(outputDir, "status.json"),
+        minWriteIntervalMs = 1000L  // 1초 간격으로 쓰로틀링
+    )
+
     private val dashboardFile = File(outputDir, "dashboard.html")
 
     // 통계
@@ -40,6 +42,13 @@ class ProgressMonitor(
     val currentIteration = AtomicInteger(0)
     val startTime = AtomicLong(0)
 
+    // LLM 통계
+    val totalLlmRequests = AtomicInteger(0)  // 총 LLM 호출 횟수
+    val successfulLlmRequests = AtomicInteger(0)  // 성공한 LLM 호출
+    val failedLlmRequests = AtomicInteger(0)  // 실패한 LLM 호출
+    @Volatile var averageLlmResponseTime: Double = 0.0  // 평균 응답 시간 (ms)
+    @Volatile var llmFailureRate: Double = 0.0  // 실패율 (0.0-1.0)
+
     // 최근 리네임 히스토리 (최대 50개)
     private val recentRenames = ConcurrentLinkedQueue<RenameEntry>()
     private val maxRecentRenames = 50
@@ -47,6 +56,10 @@ class ProgressMonitor(
     // 최근 LLM 요청 히스토리 (최대 30개)
     private val recentLlmRequests = ConcurrentLinkedQueue<LlmRequestEntry>()
     private val maxRecentLlmRequests = 30
+
+    // LLM 요청 시간 히스토리 (최대 100개, 실시간 그래프용)
+    private val llmResponseTimeHistory = ConcurrentLinkedQueue<LlmResponseTimeSnapshot>()
+    private val maxLlmResponseTimeHistory = 100
 
     // 실패한 요청 관리 (methodName -> 실패 목록)
     private val failedRequests = ConcurrentHashMap<String, MutableList<LlmRequestEntry>>()
@@ -59,6 +72,9 @@ class ProgressMonitor(
     @Volatile private var latestCpuUsage: Double = 0.0
     private val osBean = ManagementFactory.getOperatingSystemMXBean() as OperatingSystemMXBean
     private var cpuSamplingTimer: java.util.Timer? = null
+
+    @Volatile
+    private var isStarted = false  // start()가 이미 호출되었는지 추적 (idempotent)
 
     // GPU 샘플링 (GpuSampler 사용)
     @Volatile private var latestGpuInfo: GpuInfo = GpuInfo(0.0, 0, 0)
@@ -104,6 +120,9 @@ class ProgressMonitor(
     // Phase 4: 클래스 리네이밍
     @Volatile var phase4Progress: Double = 0.0  // 0-100
 
+    // Phase 5: 결과 저장
+    @Volatile var phase5Progress: Double = 0.0  // 0-100
+
     // Phase 4 Pipeline queue sizes (클래스 리네이밍)
     @Volatile var classDeepseekQueueSize: Int = 0
     @Volatile var classQwenQueueSize: Int? = null  // null이면 해당 스테이지 비활성
@@ -126,8 +145,28 @@ class ProgressMonitor(
     }
 
     fun start() {
-        startTime.set(System.currentTimeMillis())
-        recentRenames.clear()  // 이전 실행의 히스토리 제거
+        // 항상 초기화 (여러 번 호출 가능)
+        synchronized(this) {
+            // 기존 타이머 취소
+            cpuSamplingTimer?.cancel()
+
+            startTime.set(System.currentTimeMillis())
+
+            // 이전 실행의 히스토리 제거
+            recentRenames.clear()
+            recentLlmRequests.clear()
+            failedRequests.clear()
+
+            // Reset counters
+            totalClasses.set(0)
+            totalMethods.set(0)
+            leafMethods.set(0)
+            iterationProcessedMethods.set(0)
+            processedClasses.set(0)
+            renamedMethods.set(0)
+            failedMethods.set(0)
+            currentIteration.set(0)
+        }
 
         // Note: DashboardServer is now started in FixCommand.run() before this method is called
 
@@ -170,6 +209,7 @@ class ProgressMonitor(
         suggested: String,
         description: String,
         reasoning: String = "",
+        confidence: Float = 0.0f,  // 신뢰도 (0.0-1.0)
         className: String,
         filePath: String = "",
         lineNumber: Int = 0,
@@ -187,6 +227,7 @@ class ProgressMonitor(
             suggested = suggested,
             description = description.take(100),
             reasoning = reasoning.take(200),
+            confidence = confidence,
             className = className.substringAfterLast("."),
             fullClassName = className,
             filePath = filePath.substringAfterLast("sources").removePrefix("\\").removePrefix("/"),
@@ -218,8 +259,11 @@ class ProgressMonitor(
         response: String,
         durationMs: Long,
         success: Boolean,
+        confidence: Float = 0.0f,  // 신뢰도 (0.0-1.0)
         iteration: Int = 1
     ) {
+        Logger.info("[LLM Request] START | Method: $methodName | Type: $requestType | Model: $model | Iteration: $iteration")
+
         val entry = LlmRequestEntry(
             methodName = methodName,
             requestType = requestType,
@@ -228,11 +272,23 @@ class ProgressMonitor(
             response = response.take(500),
             durationMs = durationMs,
             success = success,
+            confidence = confidence,
             iteration = iteration,
             timestamp = System.currentTimeMillis()
         )
 
         recentLlmRequests.add(entry)
+
+        // LLM 통계 업데이트
+        val total = totalLlmRequests.incrementAndGet()
+        val successful = if (success) successfulLlmRequests.incrementAndGet() else successfulLlmRequests.get()
+        val failed = if (!success) failedLlmRequests.incrementAndGet() else failedLlmRequests.get()
+
+        Logger.info("[LLM Request] #$total | Method: $methodName | Type: $requestType | Model: $model | Success: $success | Duration: ${durationMs}ms | Confidence: $confidence | Iteration: $iteration")
+        Logger.debug("[LLM Request] Prompt preview: ${promptPreview.take(100)}")
+        if (!success) {
+            Logger.warn("[LLM Request] FAILED | Method: $methodName | Error: ${response.take(200)}")
+        }
 
         // 실패한 요청 별도 관리
         if (!success) {
@@ -242,10 +298,30 @@ class ProgressMonitor(
             failedRequests.remove(methodName)
         }
 
+        // 응답 시간 히스토리에 추가 (실시간 그래프용)
+        val snapshot = LlmResponseTimeSnapshot(
+            timestamp = System.currentTimeMillis(),
+            durationMs = durationMs,
+            success = success,
+            methodName = methodName
+        )
+        llmResponseTimeHistory.add(snapshot)
+
+        Logger.debug("[LLM ResponseTime] Added snapshot | Size: ${llmResponseTimeHistory.size}/$maxLlmResponseTimeHistory | Duration: ${durationMs}ms")
+
         // 최대 개수 유지
+        while (llmResponseTimeHistory.size > maxLlmResponseTimeHistory) {
+            val removed = llmResponseTimeHistory.poll()
+            Logger.debug("[LLM ResponseTime] Removed old snapshot | Method: ${removed?.methodName}")
+        }
+
         while (recentLlmRequests.size > maxRecentLlmRequests) {
             recentLlmRequests.poll()
         }
+
+        // 통계 요약 로그
+        val successRate = if (total > 0) (successful.toDouble() / total * 100) else 0.0
+        Logger.info("[LLM Stats] Total: $total | Success: $successful (${"%.1f".format(successRate)}%) | Failed: $failed | AvgTime: ${"%.0f".format(averageLlmResponseTime)}ms")
 
         updateStatus()
     }
@@ -280,7 +356,13 @@ class ProgressMonitor(
         // 서버는 계속 실행 (사용자가 대시보드를 볼 수 있도록)
         // dashboardServer?.stop()  // 주석 처리 - 수동으로 종료
         cpuSamplingTimer?.cancel()
-        updateStatus()
+
+        // 마지막 상태 저장 (동기)
+        val statusData = buildCurrentStatus()
+        storage.saveSync(statusData)
+
+        // Storage 종료
+        storage.shutdown()
     }
 
     fun fail(error: String) {
@@ -289,10 +371,24 @@ class ProgressMonitor(
         phase = "Failed"
         status = error
         cpuSamplingTimer?.cancel()
-        updateStatus()
+
+        // 마지막 상태 저장 (동기)
+        val statusData = buildCurrentStatus()
+        storage.saveSync(statusData)
+
+        // Storage 종료
+        storage.shutdown()
     }
 
     private fun updateStatus() {
+        val statusData = buildCurrentStatus()
+        storage.saveAsync(statusData)
+    }
+
+    /**
+     * 현재 상태를 ProgressStatus 객체로 빌드
+     */
+    private fun buildCurrentStatus(): ProgressStatus {
         val elapsed = if (startTime.get() > 0) {
             System.currentTimeMillis() - startTime.get()
         } else 0
@@ -323,10 +419,38 @@ class ProgressMonitor(
             java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date(completionTime))
         } else "--:--"
 
-        // 성공률
-        val successRate = if (processed > 0) {
-            (renamedMethods.get().toDouble() / processed * 100)
+        // 성공률: 전체 시도 중 성공 비율
+        // processed는 iteration별로 리셋되므로, 누적 시도 횟수를 추적
+        val totalAttempts = processed * (currentIteration.get() - 1) + processed
+        val successRate = if (totalAttempts > 0) {
+            (renamedMethods.get().toDouble() / totalAttempts * 100).coerceAtMost(100.0)
         } else 0.0
+
+        // LLM 통계 계산
+        val totalLlm = totalLlmRequests.get()
+        val successfulLlm = successfulLlmRequests.get()
+        val failedLlm = failedLlmRequests.get()
+
+        // 평균 응답 시간 (성공한 요청만)
+        val prevAvgTime = averageLlmResponseTime
+        averageLlmResponseTime = if (successfulLlm > 0) {
+            llmResponseTimeHistory
+                .filter { it.success }
+                .map { it.durationMs.toDouble() }
+                .average()
+                .let { if (it.isNaN()) 0.0 else it }
+        } else 0.0
+
+        // 실패율 (0.0-1.0)
+        llmFailureRate = if (totalLlm > 0) {
+            failedLlm.toDouble() / totalLlm
+        } else 0.0
+
+        // LLM 통계 로그 (10번마다 출력)
+        if (totalLlm > 0 && totalLlm % 10 == 0) {
+            val successRate = if (totalLlm > 0) (successfulLlm.toDouble() / totalLlm * 100) else 0.0
+            Logger.info("[LLM Status Update] Total: $totalLlm | Success: $successfulLlm (${"%.1f".format(successRate)}%) | Failed: $failedLlm | AvgTime: ${"%.0f".format(averageLlmResponseTime)}ms | FailureRate: ${"%.2f".format(llmFailureRate * 100)}% | HistorySize: ${llmResponseTimeHistory.size}")
+        }
 
         // 시스템 리소스 정보
         val runtime = Runtime.getRuntime()
@@ -386,7 +510,7 @@ class ProgressMonitor(
             (processedClassesCount.toDouble() / totalClassesCount * 100).coerceAtMost(100.0)
         } else 0.0
 
-        val statusData = ProgressStatus(
+        return ProgressStatus(
             phase = phase,
             currentPhase = currentPhase.name,
             status = status,
@@ -431,6 +555,7 @@ class ProgressMonitor(
             renameQueueSize = renameQueueSize,
             pipelineStages = pipelineStages,
             phase4Progress = phase4Prog,
+            phase5Progress = phase5Progress,
             processedClasses = processedClassesCount,
             classDeepseekQueueSize = classDeepseekQueueSize,
             classQwenQueueSize = classQwenQueueSize,
@@ -438,7 +563,7 @@ class ProgressMonitor(
             batchSize = batchSize,
             recentRenames = recentRenames.toList().reversed(),
             recentLlmRequests = recentLlmRequests.toList().reversed(),
-            failedRequests = failedRequests.values.flatten().sortedByDescending { it.timestamp },
+            failedRequests = failedRequests.values.flatMap { it }.sortedByDescending { request -> request.timestamp },
             resourceHistory = resourceHistory.toList(),
             cpuUsagePercent = cpuUsage,
             memoryUsedMb = memoryUsed,
@@ -447,16 +572,15 @@ class ProgressMonitor(
             gpuUsagePercent = latestGpuInfo.usagePercent,
             gpuMemoryUsedMb = latestGpuInfo.memoryUsedMb,
             gpuMemoryTotalMb = latestGpuInfo.memoryTotalMb,
+            // LLM statistics
+            totalLlmRequests = totalLlmRequests.get(),
+            successfulLlmRequests = successfulLlmRequests.get(),
+            failedLlmRequests = failedLlmRequests.get(),
+            averageLlmResponseTime = averageLlmResponseTime,
+            llmFailureRate = llmFailureRate,
+            llmResponseTimeHistory = llmResponseTimeHistory.toList(),
             lastUpdated = System.currentTimeMillis()
         )
-
-        try {
-            val json = gson.toJson(statusData)
-            statusFile.writeText(json)
-        } catch (e: Exception) {
-            System.err.println("Failed to write status.json: ${e.message}")
-            e.printStackTrace()
-        }
     }
 
     private fun formatDuration(ms: Long): String {
@@ -581,6 +705,8 @@ data class ProgressStatus(
     val pipelineStages: List<String>,  // 실제 파이프라인 스테이지
     // Phase 4: 클래스 리네이밍
     val phase4Progress: Double,  // 0-100
+    // Phase 5: 결과 저장
+    val phase5Progress: Double = 0.0,  // 0-100
     // Phase 4 Pipeline queues (클래스 리네이밍)
     val classDeepseekQueueSize: Int,
     val classQwenQueueSize: Int?,  // null이면 해당 스테이지 비활성
@@ -600,6 +726,13 @@ data class ProgressStatus(
     val gpuUsagePercent: Double = 0.0,
     val gpuMemoryUsedMb: Long = 0,
     val gpuMemoryTotalMb: Long = 0,
+    // LLM statistics
+    val totalLlmRequests: Int = 0,
+    val successfulLlmRequests: Int = 0,
+    val failedLlmRequests: Int = 0,
+    val averageLlmResponseTime: Double = 0.0,
+    val llmFailureRate: Double = 0.0,
+    val llmResponseTimeHistory: List<LlmResponseTimeSnapshot> = emptyList(),
     val lastUpdated: Long
 )
 
@@ -609,6 +742,7 @@ data class RenameEntry(
     val suggested: String,
     val description: String,        // 메소드가 하는 일
     val reasoning: String,          // 왜 이 이름으로 바꿨는지
+    val confidence: Float = 0.0f,   // 신뢰도 (0.0-1.0)
     val className: String,          // 짧은 클래스명 (e.g., "a")
     val fullClassName: String,      // 패키지 포함 전체 경로 (e.g., "com.example.a")
     val filePath: String,           // 소스 파일 경로
@@ -631,6 +765,7 @@ data class LlmRequestEntry(
     val response: String,           // 응답 (JSON)
     val durationMs: Long,           // 소요 시간
     val success: Boolean,           // 성공 여부
+    val confidence: Float = 0.0f,   // 신뢰도 (0.0-1.0)
     val iteration: Int = 1,         // 몇 번째 시도인지
     val timestamp: Long
 )
@@ -643,6 +778,13 @@ data class ResourceSnapshot(
     val gpuUsagePercent: Double = 0.0,    // GPU 사용률 (%)
     val gpuMemoryUsedMb: Long = 0,        // GPU 메모리 사용량 (MB)
     val gpuMemoryTotalMb: Long = 0        // GPU 메모리 전체 (MB)
+)
+
+data class LlmResponseTimeSnapshot(
+    val timestamp: Long,            // 시간 (밀리초)
+    val durationMs: Long,           // 응답 시간 (ms)
+    val success: Boolean,           // 성공 여부
+    val methodName: String = ""     // 메서드 이름 (디버깅용)
 )
 
 /**
