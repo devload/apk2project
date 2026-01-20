@@ -239,8 +239,10 @@ export default function WorkflowGraph({
     }
 
     // 7. Renamed (결과 집계)
-    const successRate = processedMethods > 0
-      ? ((renamedMethods / processedMethods) * 100).toFixed(1)
+    // 성공률 계산: 전체 시도 중 성공 비율
+    const totalAttempts = leafMethods * currentIteration;
+    const successRate = totalAttempts > 0
+      ? ((renamedMethods / totalAttempts) * 100).toFixed(1)
       : '0.0';
     const renamedLabel = renamedMethods > 0
       ? `✨ Rename Complete\n${renamedMethods} methods\n${successRate}% success${failedMethods > 0 ? `\n${failedMethods} failed` : ''}`

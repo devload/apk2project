@@ -1,10 +1,10 @@
 import type { NextConfig } from "next";
-import path from "path";
 
 const nextConfig: NextConfig = {
-  turbopack: {
-    root: path.resolve(__dirname),
-  },
+  // Turbopack disabled due to panic errors
+  // turbopack: {
+  //   root: path.resolve(__dirname),
+  // },
 };
 
 export default nextConfig;

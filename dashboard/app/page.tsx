@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import WorkflowGraph from './components/WorkflowGraph';
 import SystemMonitor from './components/SystemMonitor';
+import LlmMonitor from './components/LlmMonitor';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
@@ -66,6 +67,13 @@ interface ProgressStatus {
   gpuUsagePercent: number;
   gpuMemoryUsedMb: number;
   gpuMemoryTotalMb: number;
+  // LLM statistics
+  totalLlmRequests: number;
+  successfulLlmRequests: number;
+  failedLlmRequests: number;
+  averageLlmResponseTime: number;
+  llmFailureRate: number;
+  llmResponseTimeHistory?: LlmResponseTimeSnapshot[];
   lastUpdated: number;
 }
 
@@ -109,6 +117,13 @@ interface RenameEntry {
   iteration: number;  // 몇 번째 시도에서 성공했는지
   retryCount: number;  // 몇 번 retry 했는지
   timestamp: number;
+}
+
+interface LlmResponseTimeSnapshot {
+  timestamp: number;
+  durationMs: number;
+  success: boolean;
+  methodName: string;
 }
 
 export default function Dashboard() {
@@ -188,6 +203,23 @@ export default function Dashboard() {
           resourceHistory={status.resourceHistory || []}
         />
       </div>
+
+      {/* LLM Monitoring */}
+      {status.totalLlmRequests > 0 && (
+        <div className="mb-8">
+          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <span>🤖</span> LLM Performance
+          </h2>
+          <LlmMonitor
+            totalLlmRequests={status.totalLlmRequests}
+            successfulLlmRequests={status.successfulLlmRequests}
+            failedLlmRequests={status.failedLlmRequests}
+            averageLlmResponseTime={status.averageLlmResponseTime}
+            llmFailureRate={status.llmFailureRate}
+            llmResponseTimeHistory={status.llmResponseTimeHistory}
+          />
+        </div>
+      )}
 
       {/* Status Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
@@ -648,19 +680,30 @@ function RenameCard({ rename }: { rename: RenameEntry }) {
       )}
 
       {/* References Updated */}
-      {rename.referencesUpdated && rename.referencesUpdated > 0 && (
+      {!!rename.referencesUpdated && rename.referencesUpdated > 0 && (
         <div className="bg-blue-900/10 rounded px-2 py-1 border border-blue-600/30">
           <span className="text-xs text-blue-400">🔗 References Updated: {rename.referencesUpdated} file(s)</span>
-          {rename.updatedFiles && rename.updatedFiles.length > 0 && (
-            <div className="mt-1 ml-2 text-xs text-blue-300/70 font-mono">
-              {rename.updatedFiles.slice(0, 3).map((file, idx) => (
-                <div key={idx}>• {file}</div>
-              ))}
-              {rename.updatedFiles.length > 3 && (
-                <div className="text-blue-400/50">... and {rename.updatedFiles.length - 3} more</div>
-              )}
-            </div>
-          )}
+          {Array.isArray(rename.updatedFiles) && rename.updatedFiles.length > 0 && (() => {
+            // 유효한 파일만 필터링: null, undefined, 빈 문자열, 0, "0" 제거
+            const validFiles = rename.updatedFiles!
+              .filter(f => f != null) // null, undefined 제거
+              .filter(f => typeof f === 'string')
+              .map(f => f.trim())
+              .filter(f => f.length > 0 && f !== '0'); // 빈 문자열과 "0" 제거
+
+            if (validFiles.length === 0) return null;
+
+            return (
+              <div className="mt-1 ml-2 text-xs text-blue-300/70 font-mono">
+                {validFiles.slice(0, 3).map((file, idx) => (
+                  <div key={idx}>• {file}</div>
+                ))}
+                {validFiles.length > 3 && (
+                  <div className="text-blue-400/50">... and {validFiles.length - 3} more</div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>

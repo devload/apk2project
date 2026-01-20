@@ -79,8 +79,10 @@ function getConfig() {
     }
 
     const content = fs.readFileSync(propertiesPath, 'utf-8');
-    const outputDirMatch = content.match(/output\.dir=(.+)/);
-    const dashboardPortMatch = content.match(/dashboard\.port=(.+)/);
+    console.log('[DEBUG] properties content:', content);
+
+    const outputDirMatch = content.match(/^output\.dir=(.+)$/m);
+    const dashboardPortMatch = content.match(/^dashboard\.port=(.+)$/m);
     const ollamaUrlMatch = content.match(/ollama\.baseUrl=(.+)/);
 
     let outputDir = outputDirMatch?.[1]?.trim() || 'generate_project';
@@ -108,6 +110,10 @@ export async function GET() {
     // properties에서 설정 읽기
     const { outputDir } = getConfig();
     const statusPath = path.join(outputDir, '.apk2project', 'status.json');
+
+    console.log('[DEBUG] outputDir:', outputDir);
+    console.log('[DEBUG] statusPath:', statusPath);
+    console.log('[DEBUG] status exists:', fs.existsSync(statusPath));
 
     // 파일이 없으면 기본 상태 반환
     if (!fs.existsSync(statusPath)) {
